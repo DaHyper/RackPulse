@@ -4,6 +4,8 @@ Multi-rack power and infrastructure monitoring for PDUs, HP/Dell/Lenovo servers,
 
 Evolved from [PDU-Power-Monitor](https://github.com/DaHyper/PDU-Power-Monitor) with support for full rack inventory beyond PDUs.
 
+**Setup guides:** [Mac](MAC_SETUP.md) · [Linux (CLI)](LINUX_SETUP.md)
+
 ## Quick start
 
 ```bash
