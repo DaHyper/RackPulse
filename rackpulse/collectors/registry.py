@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from rackpulse.collectors.arista_switch import AristaSwitchCollector
 from rackpulse.collectors.apc_pdu import PduCollector
 from rackpulse.collectors.base import Collector
+from rackpulse.collectors.entity_sensor_switch import EntitySensorSwitchCollector
 from rackpulse.collectors.nvidia_gpu import NvidiaGpuCollector
 from rackpulse.collectors.proxmox import ProxmoxCollector
 from rackpulse.collectors.redfish_power import (
@@ -19,7 +19,7 @@ _lenovo = LenovoServerCollector()
 _pve = ProxmoxCollector()
 _nas = NasCollector()
 _gpu = NvidiaGpuCollector()
-_arista = AristaSwitchCollector()
+_entity_switch = EntitySensorSwitchCollector()
 
 COLLECTORS: dict[str, Collector] = {
     "pdu": _pdu,
@@ -29,7 +29,9 @@ COLLECTORS: dict[str, Collector] = {
     "pve": _pve,
     "nas": _nas,
     "gpu": _gpu,
-    "arista_switch": _arista,
+    "arista_switch": _entity_switch,
+    "cisco_switch": _entity_switch,
+    "dell_switch": _entity_switch,
     # Legacy type names (still accepted)
     "apc_pdu": _pdu,
     "hp_ilo": _hp,
@@ -37,7 +39,7 @@ COLLECTORS: dict[str, Collector] = {
     "proxmox": _pve,
     "synology": _nas,
     "nvidia_gpu": _gpu,
-    "switch": _arista,
+    "switch": _entity_switch,
 }
 
 SUPPORTED_TYPES = sorted(k for k in COLLECTORS if k not in {

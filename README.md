@@ -33,6 +33,8 @@ rackpulse watch         # live terminal dashboard
 | `pve` | Proxmox VE node | CPU/RAM, VM inventory |
 | `nas` | NAS appliance (SNMP) | CPU, RAM, temperature |
 | `arista_switch` | Arista EOS switch (SNMP ENTITY-SENSOR-MIB) | Power (W), volts, amps |
+| `cisco_switch` | Cisco switch (SNMP ENTITY-SENSOR-MIB) | Power (W), volts, amps |
+| `dell_switch` | Dell switch (SNMP ENTITY-SENSOR-MIB) | Power (W), volts, amps |
 | `gpu` | GPU workstation (nvidia-smi) | GPU power, utilization, temperature |
 
 Device **names** are yours (`hp-server`, `pve-1`, `nas-1`, etc.). Types pick the collector — no model numbers needed.
@@ -45,7 +47,7 @@ Device **names** are yours (`hp-server`, `pve-1`, `nas-1`, etc.). Types pick the
 | `hp_server` / `dell_server` / `lenovo_server` | Per server | BMC reports chassis power (W) |
 | `pve` | No (CPU/RAM only) | Unless `collect_gpu_power: true` — then GPU draw via `nvidia-smi` over SSH |
 | `gpu` | Per host | Sum of GPU power draw (local or SSH) |
-| `arista_switch` | Per switch | V × A from ENTITY-SENSOR-MIB PSU sensors |
+| `arista_switch` / `cisco_switch` / `dell_switch` | Per switch | V × A or direct watt sensors via ENTITY-SENSOR-MIB |
 | `nas` | No | Synology SNMP has temp/CPU/RAM but not system watts |
 
 For GPU hosts, add `collect_gpu_power: true` and `ssh_user` on the PVE entry, or use a separate `gpu` device:

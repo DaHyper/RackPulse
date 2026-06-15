@@ -91,9 +91,19 @@ racks:
         host: 192.168.1.40
         community: public
 
-      - name: switch-1
+      - name: switch-arista-1
         type: arista_switch
         host: 192.168.1.50
+        community: public
+
+      - name: switch-cisco-1
+        type: cisco_switch
+        host: 192.168.1.60
+        community: public
+
+      - name: switch-dell-1
+        type: dell_switch
+        host: 192.168.1.61
         community: public
 
       - name: gpu-workstation
