@@ -1,0 +1,3 @@
+from rackpulse.collectors.entity_sensor_switch import EntitySensorSwitchCollector
+
+CiscoSwitchCollector = EntitySensorSwitchCollector

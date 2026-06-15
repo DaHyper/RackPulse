@@ -14,6 +14,7 @@ OID_SENSOR_PHYSICAL_INDEX = f"{ENTITY_SENSOR_BASE}.9"
 # entPhySensorType values
 SENSOR_TYPE_VOLTS = 3
 SENSOR_TYPE_AMPS = 5
+SENSOR_TYPE_WATTS = 14
 SENSOR_TYPE_CELSIUS = 8
 SENSOR_TYPE_RPM = 10
 
@@ -69,8 +70,27 @@ def build_entity_sensors(
 
 
 def pair_psu_power(sensors: list[EntitySensor]) -> tuple[float, float | None, float | None, list[dict]]:
-    """Pair voltage/current sensors by physical entity and sum PSU watts."""
+    """Derive switch power from ENTITY-SENSOR-MIB readings."""
     active = [s for s in sensors if s.oper_status == SENSOR_OPER_OK]
+
+    # Some Cisco/Dell platforms expose direct watt sensors (type 14).
+    watt_sensors = [
+        s for s in active if s.sensor_type == SENSOR_TYPE_WATTS and s.scaled_value > 0
+    ]
+    if watt_sensors:
+        by_entity: dict[int, float] = {}
+        for sensor in watt_sensors:
+            entity = sensor.physical_index or sensor.index
+            by_entity[entity] = by_entity.get(entity, 0.0) + sensor.scaled_value
+        psu_readings = [
+            {"entity": entity, "watts": round(watts, 2)}
+            for entity, watts in sorted(by_entity.items())
+        ]
+        total = round(sum(by_entity.values()), 2)
+        if total > 0:
+            return total, None, None, psu_readings
+
+    # Pair voltage/current sensors by physical entity (Arista and most others).
     by_entity: dict[int, dict[str, EntitySensor]] = {}
 
     for sensor in active:

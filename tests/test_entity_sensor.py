@@ -3,6 +3,7 @@ from rackpulse.collectors.entity_sensor import (
     SENSOR_OPER_OK,
     SENSOR_TYPE_AMPS,
     SENSOR_TYPE_VOLTS,
+    SENSOR_TYPE_WATTS,
     pair_psu_power,
     scale_sensor_value,
 )
@@ -14,6 +15,17 @@ def test_scale_sensor_acceptance_example() -> None:
     assert amps == 0.97
     assert volts == 208.5
     assert round(volts * amps, 2) == 202.25
+
+
+def test_direct_watt_sensors() -> None:
+    sensors = [
+        EntitySensor(1, SENSOR_TYPE_WATTS, 0, 0, 198, SENSOR_OPER_OK, 10, 198.0),
+    ]
+    watts, volts, amps, psus = pair_psu_power(sensors)
+    assert watts == 198.0
+    assert volts is None
+    assert amps is None
+    assert len(psus) == 1
 
 
 def test_pair_psu_power_sums_redundant_psus() -> None:
