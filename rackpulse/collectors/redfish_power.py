@@ -1,10 +1,33 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 
 from rackpulse.collectors.base import Collector
 from rackpulse.config import AppConfig, DeviceConfig
 from rackpulse.models import DeviceStatus, MetricReading
+
+_RETRYABLE = (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout)
+_RETRY_BACKOFFS = (0.5, 1.0)
+_MAX_GET_ATTEMPTS = 3
+
+
+async def _get_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    auth: tuple[str, str],
+) -> httpx.Response:
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_GET_ATTEMPTS):
+        try:
+            return await client.get(url, auth=auth)
+        except _RETRYABLE as exc:
+            last_exc = exc
+            if attempt < _MAX_GET_ATTEMPTS - 1:
+                await asyncio.sleep(_RETRY_BACKOFFS[attempt])
+    assert last_exc is not None
+    raise last_exc
 
 
 class RedfishPowerCollector(Collector):
@@ -69,7 +92,7 @@ class RedfishPowerCollector(Collector):
         ]
 
         for path in power_paths:
-            response = await client.get(f"{base_url}{path}", auth=auth)
+            response = await _get_with_retry(client, f"{base_url}{path}", auth)
             if response.status_code == 404:
                 continue
             response.raise_for_status()
@@ -96,7 +119,7 @@ class RedfishPowerCollector(Collector):
         if power_watts is None:
             # Fallback: sum PowerSupplies LastPowerOutputWatts
             for path in power_paths:
-                response = await client.get(f"{base_url}{path}", auth=auth)
+                response = await _get_with_retry(client, f"{base_url}{path}", auth)
                 if response.status_code != 200:
                     continue
                 data = response.json()
@@ -115,7 +138,7 @@ class RedfishPowerCollector(Collector):
             "/redfish/v1/Chassis/System.Embedded.1/Thermal",
         ]
         for path in thermal_paths:
-            response = await client.get(f"{base_url}{path}", auth=auth)
+            response = await _get_with_retry(client, f"{base_url}{path}", auth)
             if response.status_code == 404:
                 continue
             if response.status_code == 200:
