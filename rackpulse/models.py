@@ -45,6 +45,7 @@ class DeviceReading:
     last_poll: datetime | None = None
     error: str | None = None
     vms: list[VmReading] = field(default_factory=list)
+    parent_name: str | None = None
 
     @property
     def power_watts(self) -> float | None:

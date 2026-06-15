@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from rackpulse.collectors.registry import get_collector
 from rackpulse.config import AppConfig, DeviceConfig, RackConfig, load_config
 from rackpulse.models import DeviceReading, DeviceStatus, PollSnapshot, RackReading, RackStatus
+from rackpulse.display.order import order_rack_devices
 from rackpulse.storage import Storage
 
 logger = logging.getLogger(__name__)
@@ -186,13 +187,16 @@ class Poller:
         if total_watts is None and any(d.status == DeviceStatus.OK for d in devices):
             status = RackStatus.OK
 
+        parent_by_name = {device.name: device.parent for device in rack.devices}
+        ordered_devices = order_rack_devices(devices, parent_by_name=parent_by_name)
+
         return RackReading(
             name=rack.name,
             location=rack.location,
             power_watts=total_watts,
             power_cap_watts=cap_watts,
             status=status,
-            devices=devices,
+            devices=ordered_devices,
             warning_watts=warning_watts,
             critical_watts=critical_watts,
         )

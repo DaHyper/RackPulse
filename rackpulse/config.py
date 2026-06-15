@@ -73,6 +73,7 @@ class DeviceConfig:
     port: int | None = None
     ssh_user: str | None = None
     collect_gpu_power: bool = False
+    parent: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -118,6 +119,7 @@ def _parse_device(data: dict[str, Any], snmp_defaults: SnmpDefaults) -> DeviceCo
         "port",
         "ssh_user",
         "collect_gpu_power",
+        "parent",
     }
     extra = {k: v for k, v in data.items() if k not in known}
     return DeviceConfig(
@@ -135,6 +137,7 @@ def _parse_device(data: dict[str, Any], snmp_defaults: SnmpDefaults) -> DeviceCo
         port=int(data["port"]) if data.get("port") is not None else None,
         ssh_user=data.get("ssh_user"),
         collect_gpu_power=bool(data.get("collect_gpu_power", False)),
+        parent=data.get("parent"),
         extra=extra,
     )
 

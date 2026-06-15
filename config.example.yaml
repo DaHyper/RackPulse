@@ -71,6 +71,7 @@ racks:
       - name: pve-1
         type: pve
         host: 192.168.1.30
+        parent: hp-server  # nest under the BMC host in the dashboard
         token_id: monitor@pam!rackpulse
         token_secret: changeme
         # node: optional — auto-detected from host IP; set only to override
