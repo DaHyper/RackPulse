@@ -29,6 +29,8 @@ class MetricReading:
     temperature_c: float | None = None
     gpu_power_watts: float | None = None
     gpu_util_percent: float | None = None
+    volts: float | None = None
+    amps: float | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 
