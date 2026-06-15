@@ -64,14 +64,14 @@ def _render_rack_table(rack) -> Panel:
     subtitle.append(f"  [{rack.status.value}]", style=STATUS_STYLE.get(rack.status, "dim"))
 
     table = Table(box=box.SIMPLE, expand=True, show_header=True, header_style="bold")
-    table.add_column("Device")
-    table.add_column("Type")
-    table.add_column("Host")
-    table.add_column("Power", justify="right")
-    table.add_column("CPU", justify="right")
-    table.add_column("RAM", justify="right")
-    table.add_column("Temp", justify="right")
-    table.add_column("Status")
+    table.add_column("Device", no_wrap=True)
+    table.add_column("Type", no_wrap=True)
+    table.add_column("Host", no_wrap=True)
+    table.add_column("Power", justify="right", no_wrap=True)
+    table.add_column("CPU", justify="right", no_wrap=True)
+    table.add_column("RAM", justify="right", no_wrap=True)
+    table.add_column("Temp", justify="right", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
 
     for device in rack.devices:
         status_text = Text(device.status.value, style=DEVICE_STATUS_STYLE.get(device.status, "white"))
@@ -79,10 +79,10 @@ def _render_rack_table(rack) -> Panel:
             short = device.error if len(device.error) <= 36 else device.error[:33] + "..."
             status_text.append(f" ({short})", style="dim")
 
-        name_cell = Text()
         if device.parent_name:
-            name_cell.append("  ↳ ", style="dim")
-        name_cell.append(device.name, style="dim" if device.parent_name else "")
+            name_cell = Text(f"↳ {device.name}", style="dim")
+        else:
+            name_cell = device.name
 
         table.add_row(
             name_cell,
