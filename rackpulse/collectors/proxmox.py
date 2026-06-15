@@ -6,6 +6,9 @@ from rackpulse.collectors.base import Collector
 from rackpulse.config import AppConfig, DeviceConfig
 from rackpulse.models import DeviceStatus, MetricReading, VmReading
 
+# Resolved PVE node name per API endpoint (host:port).
+_node_cache: dict[str, str] = {}
+
 
 class ProxmoxCollector(Collector):
     device_type = "pve"
@@ -28,12 +31,20 @@ class ProxmoxCollector(Collector):
         port = device.port or self.default_port
         base_url = f"https://{device.host}:{port}/api2/json"
         headers = {"Authorization": f"PVEAPIToken={device.token_id}={device.token_secret}"}
+        cache_key = f"{device.host}:{port}"
 
         try:
             async with httpx.AsyncClient(
                 verify=device.verify_ssl, timeout=20.0, follow_redirects=True
             ) as client:
-                node = device.node or await self._detect_node(client, base_url, headers)
+                if device.node:
+                    node = device.node
+                elif cache_key in _node_cache:
+                    node = _node_cache[cache_key]
+                else:
+                    node = await self._detect_node(client, base_url, headers, device.host)
+                    _node_cache[cache_key] = node
+
                 node_status = await self._get_json(
                     client, f"{base_url}/nodes/{node}/status", headers
                 )
@@ -71,12 +82,50 @@ class ProxmoxCollector(Collector):
         client: httpx.AsyncClient,
         base_url: str,
         headers: dict[str, str],
+        host: str,
     ) -> str:
         payload = await self._get_json(client, f"{base_url}/nodes", headers)
         nodes = payload.get("data", [])
         if not nodes:
             raise ValueError("No PVE nodes found")
-        return nodes[0]["node"]
+
+        online = [n for n in nodes if n.get("status") == "online"]
+        candidates = online or nodes
+
+        if len(candidates) == 1:
+            return candidates[0]["node"]
+
+        matched = await self._find_node_by_host(client, base_url, headers, host, candidates)
+        if matched:
+            return matched
+
+        names = ", ".join(n["node"] for n in candidates)
+        raise ValueError(
+            f"Could not match PVE node to host {host}. "
+            f"Online nodes: {names}. Set node: in config to override."
+        )
+
+    async def _find_node_by_host(
+        self,
+        client: httpx.AsyncClient,
+        base_url: str,
+        headers: dict[str, str],
+        host: str,
+        candidates: list[dict],
+    ) -> str | None:
+        host = host.lower()
+        for entry in candidates:
+            node = entry["node"]
+            payload = await self._get_json(client, f"{base_url}/nodes/{node}/network", headers)
+            for iface in payload.get("data", []):
+                for key in ("address", "cidr"):
+                    value = iface.get(key)
+                    if not value:
+                        continue
+                    address = value.split("/")[0].lower()
+                    if address == host:
+                        return node
+        return None
 
     async def _collect_vms(
         self,
