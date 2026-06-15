@@ -23,6 +23,16 @@ SENSOR_OPER_OK = 2
 SENSOR_OPER_UNAVAILABLE = 3
 SENSOR_OPER_NON_OPERATIONAL = 4
 
+# Typical ranges for PSU telemetry (used to resolve ambiguous scale/precision).
+_PLAUSIBLE_RANGES: dict[int, tuple[float, float]] = {
+    SENSOR_TYPE_VOLTS: (80.0, 280.0),
+    SENSOR_TYPE_AMPS: (0.01, 30.0),
+    SENSOR_TYPE_WATTS: (1.0, 8000.0),
+}
+
+# Switches should not exceed this; catches remaining scaling/pairing mistakes.
+MAX_SWITCH_WATTS = 15_000.0
+
 
 @dataclass
 class EntitySensor:
@@ -39,6 +49,28 @@ class EntitySensor:
 def scale_sensor_value(raw: float, scale: int, precision: int) -> float:
     """Apply RFC3433 ENTITY-SENSOR-MIB scaling."""
     return float(raw) * (10**scale) / (10**precision)
+
+
+def resolve_scaled_value(sensor_type: int, raw: float, scale: int, precision: int) -> float:
+    """Resolve vendor-specific scale/precision into a plausible engineering value."""
+    candidates: list[tuple[int, int]] = []
+    for pair in (
+        (scale, precision),
+        (0, 2),  # centi-units — common when precision column is absent
+        (0, precision),
+        (0, 0),
+        (-2, 0),
+    ):
+        if pair not in candidates:
+            candidates.append(pair)
+
+    lo, hi = _PLAUSIBLE_RANGES.get(sensor_type, (None, None))
+    for s, p in candidates:
+        value = scale_sensor_value(raw, s, p)
+        if lo is None or lo <= value <= hi:
+            return value
+
+    return scale_sensor_value(raw, scale, precision)
 
 
 def build_entity_sensors(
@@ -65,7 +97,7 @@ def build_entity_sensors(
                 raw_value=raw,
                 oper_status=int(oper_statuses.get(index, SENSOR_OPER_OK)),
                 physical_index=int(physical_indexes.get(index, 0)),
-                scaled_value=scale_sensor_value(raw, scale, precision),
+                scaled_value=resolve_scaled_value(int(types[index]), raw, scale, precision),
             )
         )
     return sensors
@@ -90,7 +122,11 @@ def _active_sensors(sensors: list[EntitySensor]) -> list[EntitySensor]:
 
 def _sum_direct_watts(active: list[EntitySensor]) -> tuple[float, list[dict]] | None:
     watt_sensors = [
-        s for s in active if s.sensor_type == SENSOR_TYPE_WATTS and s.scaled_value > 0
+        s
+        for s in active
+        if s.sensor_type == SENSOR_TYPE_WATTS
+        and s.scaled_value > 0
+        and s.scaled_value <= _PLAUSIBLE_RANGES[SENSOR_TYPE_WATTS][1]
     ]
     if not watt_sensors:
         return None
@@ -186,9 +222,19 @@ def pair_psu_power(sensors: list[EntitySensor]) -> tuple[float, float | None, fl
     """Derive switch power from ENTITY-SENSOR-MIB readings."""
     active = _active_sensors(sensors)
 
+    va_total, va_volts, va_amps, va_psus = _pair_volts_amps(active)
+    if 0 < va_total <= MAX_SWITCH_WATTS:
+        return va_total, va_volts, va_amps, va_psus
+
     direct = _sum_direct_watts(active)
-    if direct:
+    if direct and direct[0] <= MAX_SWITCH_WATTS:
         total, psu_readings = direct
         return total, None, None, psu_readings
 
-    return _pair_volts_amps(active)
+    if va_total > 0:
+        return va_total, va_volts, va_amps, va_psus
+
+    if direct:
+        return direct[0], None, None, direct[1]
+
+    return 0.0, None, None, []
