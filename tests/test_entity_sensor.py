@@ -4,7 +4,9 @@ from rackpulse.collectors.entity_sensor import (
     SENSOR_TYPE_AMPS,
     SENSOR_TYPE_VOLTS,
     SENSOR_TYPE_WATTS,
+    build_entity_sensors,
     pair_psu_power,
+    resolve_scaled_value,
     scale_sensor_value,
 )
 
@@ -45,8 +47,6 @@ def test_pair_psu_power_sums_redundant_psus() -> None:
 
 def test_pair_psu_power_arista_index_fallback() -> None:
     """Arista often omits operStatus/physicalIndex; pair V/A by sorted index."""
-    from rackpulse.collectors.entity_sensor import build_entity_sensors
-
     sensors = build_entity_sensors(
         {100721104: SENSOR_TYPE_VOLTS, 100721102: SENSOR_TYPE_AMPS},
         {100721104: 0, 100721102: 0},
@@ -60,3 +60,22 @@ def test_pair_psu_power_arista_index_fallback() -> None:
     assert volts == 208.5
     assert amps == 0.97
     assert len(psus) == 1
+
+
+def test_resolve_scaled_value_arista_misreported_scale() -> None:
+    """Arista may report scale=4 with precision=0 for centi-amp raw values."""
+    assert resolve_scaled_value(SENSOR_TYPE_VOLTS, 20850, 0, 0) == 208.5
+    assert resolve_scaled_value(SENSOR_TYPE_AMPS, 97, 4, 0) == 0.97
+    watts, volts, amps, psus = pair_psu_power(
+        build_entity_sensors(
+            {100721104: SENSOR_TYPE_VOLTS, 100721102: SENSOR_TYPE_AMPS},
+            {100721104: 0, 100721102: 4},
+            {100721104: 0, 100721102: 0},
+            {100721104: 20850, 100721102: 97},
+            {},
+            {},
+        )
+    )
+    assert watts == 202.25
+    assert volts == 208.5
+    assert amps == 0.97
