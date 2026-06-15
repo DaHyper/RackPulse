@@ -1,0 +1,99 @@
+# RackPulse configuration — copy to config.yaml and edit for your environment.
+
+poll_interval_seconds: 60
+
+storage:
+  path: ./data/rackpulse.db
+  retain_days: 90
+
+# Auth is optional for now. Set enabled: true when you expose the API.
+auth:
+  enabled: false
+  api_key: ""
+
+server:
+  host: 127.0.0.1
+  port: 8080
+
+snmp:
+  version: "2c"
+  timeout_seconds: 5
+  retries: 2
+  community: public
+  v3:
+    username: ""
+    auth_password: ""
+    priv_password: ""
+    auth_protocol: SHA
+    priv_protocol: AES
+    security_level: authPriv
+
+# PDU power OIDs — confirm divisor with snmpwalk on your hardware.
+# Example: snmpwalk -v2c -c public <pdu-ip> 1.3.6.1.4.1.318.1.1.26.4.3.1.5
+pdu:
+  power_oid: "1.3.6.1.4.1.318.1.1.26.4.3.1.5.1"
+  power_divisor: 100
+  energy_oid: "1.3.6.1.4.1.318.1.1.26.4.3.1.9.1"
+  energy_divisor: 10
+
+racks:
+  - name: rack-1
+    location: datacenter row 1
+    warning_kw: 4.0
+    critical_kw: 5.0
+    devices:
+      - name: pdu-1
+        type: pdu
+        host: 192.168.1.10
+        community: public
+
+      - name: hp-server
+        type: hp_server
+        host: 192.168.1.20
+        username: bmc-user
+        password: changeme
+        verify_ssl: false
+
+      - name: dell-server
+        type: dell_server
+        host: 192.168.1.21
+        username: bmc-user
+        password: changeme
+        verify_ssl: false
+
+      # - name: lenovo-server
+      #   type: lenovo_server
+      #   host: 192.168.1.22
+      #   username: bmc-user
+      #   password: changeme
+      #   verify_ssl: false
+
+      - name: pve-1
+        type: pve
+        host: 192.168.1.30
+        token_id: monitor@pam!rackpulse
+        token_secret: changeme
+        node: node-1
+        verify_ssl: false
+
+  - name: rack-2
+    location: datacenter row 2
+    warning_kw: 3.0
+    critical_kw: 4.0
+    devices:
+      - name: pdu-2
+        type: pdu
+        host: 192.168.1.11
+        community: public
+
+      - name: nas-1
+        type: nas
+        host: 192.168.1.40
+        community: public
+
+      - name: gpu-workstation
+        type: gpu
+        host: localhost
+        # For remote hosts, set host to IP and ssh_user:
+        # host: 192.168.1.50
+        # ssh_user: your-user
