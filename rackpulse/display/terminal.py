@@ -74,6 +74,11 @@ def _render_rack_table(rack) -> Panel:
     table.add_column("Status")
 
     for device in sorted(rack.devices, key=lambda d: d.power_watts or 0, reverse=True):
+        status_text = Text(device.status.value, style=DEVICE_STATUS_STYLE.get(device.status, "white"))
+        if device.error and device.status in (DeviceStatus.UNREACHABLE, DeviceStatus.ERROR):
+            short = device.error if len(device.error) <= 36 else device.error[:33] + "..."
+            status_text.append(f" ({short})", style="dim")
+
         table.add_row(
             device.name,
             device.device_type,
@@ -82,7 +87,7 @@ def _render_rack_table(rack) -> Panel:
             _fmt_pct(device.metrics.cpu_percent or device.metrics.gpu_util_percent),
             _fmt_pct(device.metrics.ram_percent),
             f"{device.metrics.temperature_c:.0f}°C" if device.metrics.temperature_c else "—",
-            Text(device.status.value, style=DEVICE_STATUS_STYLE.get(device.status, "white")),
+            status_text,
         )
 
     return Panel(table, title=title, subtitle=subtitle, border_style=STATUS_STYLE.get(rack.status, "white"))

@@ -41,3 +41,22 @@ def test_pair_psu_power_sums_redundant_psus() -> None:
     assert watts == round(208.5 * 0.97 + 208.0 * 0.95, 2)
     assert volts == 208.5
     assert amps == 0.97
+
+
+def test_pair_psu_power_arista_index_fallback() -> None:
+    """Arista often omits operStatus/physicalIndex; pair V/A by sorted index."""
+    from rackpulse.collectors.entity_sensor import build_entity_sensors
+
+    sensors = build_entity_sensors(
+        {100721104: SENSOR_TYPE_VOLTS, 100721102: SENSOR_TYPE_AMPS},
+        {100721104: 0, 100721102: 0},
+        {100721104: 2, 100721102: 2},
+        {100721104: 20850, 100721102: 97},
+        {},
+        {},
+    )
+    watts, volts, amps, psus = pair_psu_power(sensors)
+    assert watts == 202.25
+    assert volts == 208.5
+    assert amps == 0.97
+    assert len(psus) == 1

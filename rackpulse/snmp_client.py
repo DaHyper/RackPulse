@@ -96,9 +96,10 @@ def _build_auth_data(device: DeviceConfig, snmp: SnmpDefaults):
 
 async def snmp_get(device: DeviceConfig, oid: str, snmp: SnmpDefaults) -> SnmpResult:
     oid = _normalize_oid(oid)
+    port = device.port or 161
     try:
         transport = await UdpTransportTarget.create(
-            (device.host, 161),
+            (device.host, port),
             timeout=snmp.timeout_seconds,
             retries=snmp.retries,
         )
@@ -136,10 +137,11 @@ async def snmp_walk_column(
     column_oid = _normalize_oid(column_oid)
     results: dict[int, float] = {}
     error: str | None = None
+    port = device.port or 161
 
     try:
         transport = await UdpTransportTarget.create(
-            (device.host, 161),
+            (device.host, port),
             timeout=snmp.timeout_seconds,
             retries=snmp.retries,
         )
