@@ -12,6 +12,15 @@ from rackpulse.storage import Storage
 
 logger = logging.getLogger(__name__)
 
+BMC_DEVICE_TYPES = frozenset({
+    "hp_server",
+    "dell_server",
+    "lenovo_server",
+    "hp_ilo",
+    "dell_idrac",
+})
+BMC_POLL_CONCURRENCY = 2
+
 
 class Poller:
     def __init__(self, config_path: str) -> None:
@@ -21,6 +30,7 @@ class Poller:
         self._storage = Storage(self._config.storage.path)
         self._snapshot = PollSnapshot(poll_interval_seconds=self._config.poll_interval_seconds)
         self._last_good: dict[str, DeviceReading] = {}
+        self._bmc_semaphore = asyncio.Semaphore(BMC_POLL_CONCURRENCY)
         self._task: asyncio.Task[None] | None = None
         self._stop: asyncio.Event | None = None
 
@@ -124,7 +134,11 @@ class Poller:
         rack_name = rack.name if isinstance(rack, RackConfig) else rack
         try:
             collector = get_collector(device.type)
-            reading = await collector.collect(device, rack_name, config)
+            if device.type in BMC_DEVICE_TYPES:
+                async with self._bmc_semaphore:
+                    reading = await collector.collect(device, rack_name, config)
+            else:
+                reading = await collector.collect(device, rack_name, config)
         except Exception as exc:  # noqa: BLE001
             reading = DeviceReading(
                 name=device.name,

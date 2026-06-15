@@ -30,7 +30,9 @@ class ProxmoxCollector(Collector):
         headers = {"Authorization": f"PVEAPIToken={device.token_id}={device.token_secret}"}
 
         try:
-            async with httpx.AsyncClient(verify=device.verify_ssl, timeout=20.0) as client:
+            async with httpx.AsyncClient(
+                verify=device.verify_ssl, timeout=20.0, follow_redirects=True
+            ) as client:
                 node = device.node or await self._detect_node(client, base_url, headers)
                 node_status = await self._get_json(
                     client, f"{base_url}/nodes/{node}/status", headers
