@@ -36,6 +36,31 @@ rackpulse watch         # live terminal dashboard
 
 Device **names** are yours (`hp-server`, `pve-1`, `nas-1`, etc.). Types pick the collector — no model numbers needed.
 
+### Where power readings come from
+
+| Source | Power? | Notes |
+|--------|--------|-------|
+| `pdu` | Rack total | One number for the whole PDU — not per-outlet unless your hardware supports branch metering |
+| `hp_server` / `dell_server` / `lenovo_server` | Per server | BMC reports chassis power (W) |
+| `pve` | No (CPU/RAM only) | Unless `collect_gpu_power: true` — then GPU draw via `nvidia-smi` over SSH |
+| `gpu` | Per host | Sum of GPU power draw (local or SSH) |
+| `nas` | No | Synology SNMP has temp/CPU/RAM but not system watts |
+
+For GPU hosts, add `collect_gpu_power: true` and `ssh_user` on the PVE entry, or use a separate `gpu` device:
+
+```yaml
+- name: gpu-host-1
+  type: pve
+  host: 192.168.1.50
+  collect_gpu_power: true
+  ssh_user: root
+  token_id: monitor@pam!rackpulse
+  token_secret: changeme
+  verify_ssl: false
+```
+
+Requires passwordless SSH from the machine running RackPulse to the PVE host. GPU power is **card draw only** — add ~50–100 W for CPU/PSU overhead, or add an `hp_server` entry if the box has a BMC.
+
 ### PDU SNMP divisor
 
 Confirm scaling with a live walk on your PDU:

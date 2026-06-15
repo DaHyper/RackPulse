@@ -66,6 +66,25 @@ class ProxmoxCollector(Collector):
             return self._base_reading(device, rack, DeviceStatus.ERROR, error=str(exc))
 
         data = node_status.get("data", node_status)
+        extra: dict = {"node": node, "uptime": data.get("uptime")}
+        gpu_power_watts = None
+        gpu_util_percent = None
+        temperature_c = None
+
+        if device.collect_gpu_power:
+            from rackpulse.collectors.nvidia_gpu import NvidiaGpuCollector
+
+            gpu_reading = await NvidiaGpuCollector().collect(device, rack, config)
+            if gpu_reading.status == DeviceStatus.OK:
+                gpu_power_watts = gpu_reading.metrics.gpu_power_watts
+                gpu_util_percent = gpu_reading.metrics.gpu_util_percent
+                temperature_c = gpu_reading.metrics.temperature_c
+                extra["gpu_power_source"] = "nvidia-smi"
+                if gpu_reading.metrics.extra.get("gpus"):
+                    extra["gpus"] = gpu_reading.metrics.extra["gpus"]
+            elif gpu_reading.error:
+                extra["gpu_power_error"] = gpu_reading.error
+
         reading = self._base_reading(
             device,
             rack,
@@ -73,7 +92,10 @@ class ProxmoxCollector(Collector):
             MetricReading(
                 cpu_percent=cpu_percent,
                 ram_percent=ram_percent,
-                extra={"node": node, "uptime": data.get("uptime")},
+                temperature_c=temperature_c,
+                gpu_power_watts=gpu_power_watts,
+                gpu_util_percent=gpu_util_percent,
+                extra=extra,
             ),
         )
         return reading
