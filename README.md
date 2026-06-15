@@ -48,7 +48,9 @@ Adjust `pdu.power_divisor` in config until readings match expected kW.
 
 ### PVE API token
 
-Create a read-only token in the Proxmox UI, then set `token_id` and `token_secret` in config.
+Create a read-only token in the Proxmox UI with **`Sys.Audit`** and **`VM.Audit`** (the built-in `PVEAuditor` role works). With **Privilege Separation** enabled on the token, assign that role to the token itself (e.g. `root@pam!rackpulse` on path `/`).
+
+Each PVE device only needs `host`, `token_id`, and `token_secret` — the Proxmox **node name is auto-detected** by matching `host` to the node's network addresses. Set `node:` only if you need to override.
 
 ### Server BMC (Redfish)
 

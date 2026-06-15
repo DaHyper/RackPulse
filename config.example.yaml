@@ -73,7 +73,7 @@ racks:
         host: 192.168.1.30
         token_id: monitor@pam!rackpulse
         token_secret: changeme
-        node: node-1
+        # node: optional — auto-detected from host IP; set only to override
         verify_ssl: false
 
   - name: rack-2
