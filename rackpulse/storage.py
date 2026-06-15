@@ -77,6 +77,19 @@ class Storage:
 
                 CREATE INDEX IF NOT EXISTS idx_vm_metrics_host_time
                     ON vm_metrics (host_device, timestamp);
+
+                CREATE TABLE IF NOT EXISTS power_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_name TEXT NOT NULL,
+                    rack TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    watts REAL,
+                    volts REAL,
+                    amps REAL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_power_metrics_device_time
+                    ON power_metrics (device_name, timestamp);
                 """
             )
 
@@ -119,6 +132,22 @@ class Storage:
                             """,
                             (device.name, rack.name, ts, watts),
                         )
+                        if metrics.volts is not None or metrics.amps is not None:
+                            conn.execute(
+                                """
+                                INSERT INTO power_metrics
+                                    (device_name, rack, timestamp, watts, volts, amps)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    device.name,
+                                    rack.name,
+                                    ts,
+                                    watts,
+                                    metrics.volts,
+                                    metrics.amps,
+                                ),
+                            )
 
                     metrics = device.metrics
                     if any(
@@ -168,7 +197,7 @@ class Storage:
     def prune_old_data(self, retain_days: int) -> None:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=retain_days)).isoformat()
         with self._connect() as conn:
-            for table in ("power_samples", "device_metrics", "vm_metrics"):
+            for table in ("power_samples", "device_metrics", "vm_metrics", "power_metrics"):
                 conn.execute(f"DELETE FROM {table} WHERE timestamp < ?", (cutoff,))
 
     def recent_power_by_rack(self, rack: str, hours: float = 24) -> list[tuple[str, float]]:
@@ -203,3 +232,74 @@ class Storage:
                 (limit,),
             ).fetchall()
         return [(row["device_name"], row["rack"], row["watts"]) for row in rows]
+
+    def device_power_history(
+        self,
+        device_name: str,
+        hours: float = 24,
+    ) -> list[dict[str, float | str | None]]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT timestamp, watts, volts, amps
+                FROM power_metrics
+                WHERE device_name = ? AND timestamp >= ?
+                ORDER BY timestamp
+                """,
+                (device_name, cutoff),
+            ).fetchall()
+        if rows:
+            return [
+                {
+                    "timestamp": row["timestamp"],
+                    "watts": row["watts"],
+                    "volts": row["volts"],
+                    "amps": row["amps"],
+                }
+                for row in rows
+            ]
+
+        rows = conn.execute(
+            """
+            SELECT timestamp, watts
+            FROM power_samples
+            WHERE device_name = ? AND timestamp >= ?
+            ORDER BY timestamp
+            """,
+            (device_name, cutoff),
+        ).fetchall()
+        return [{"timestamp": row["timestamp"], "watts": row["watts"], "volts": None, "amps": None} for row in rows]
+
+    def latest_power_metric(self, device_name: str) -> dict[str, float | str | None] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT timestamp, watts, volts, amps
+                FROM power_metrics
+                WHERE device_name = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                (device_name,),
+            ).fetchone()
+        if row:
+            return {
+                "timestamp": row["timestamp"],
+                "watts": row["watts"],
+                "volts": row["volts"],
+                "amps": row["amps"],
+            }
+        row = conn.execute(
+            """
+            SELECT timestamp, watts
+            FROM power_samples
+            WHERE device_name = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """,
+            (device_name,),
+        ).fetchone()
+        if not row:
+            return None
+        return {"timestamp": row["timestamp"], "watts": row["watts"], "volts": None, "amps": None}

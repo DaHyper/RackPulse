@@ -11,6 +11,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     SnmpEngine,
     UdpTransportTarget,
     UsmUserData,
+    bulk_cmd,
     get_cmd,
     usmAesCfb128Protocol,
     usmAesCfb192Protocol,
@@ -124,3 +125,70 @@ async def snmp_get(device: DeviceConfig, oid: str, snmp: SnmpDefaults) -> SnmpRe
         return SnmpResult(success=True, value=numeric)
 
     return SnmpResult(success=False, error="Empty SNMP response")
+
+
+async def snmp_walk_column(
+    device: DeviceConfig,
+    column_oid: str,
+    snmp: SnmpDefaults,
+) -> tuple[dict[int, float], str | None]:
+    """Walk an SNMP table column; returns {row_index: numeric_value}."""
+    column_oid = _normalize_oid(column_oid)
+    results: dict[int, float] = {}
+    error: str | None = None
+
+    try:
+        transport = await UdpTransportTarget.create(
+            (device.host, 161),
+            timeout=snmp.timeout_seconds,
+            retries=snmp.retries,
+        )
+        auth = _build_auth_data(device, snmp)
+    except Exception as exc:  # noqa: BLE001
+        return {}, str(exc)
+
+    var_binds = [ObjectType(ObjectIdentity(column_oid))]
+    while var_binds:
+        try:
+            error_indication, error_status, _error_index, var_bind_table = await bulk_cmd(
+                _engine,
+                auth,
+                transport,
+                ContextData(),
+                0,
+                50,
+                *var_binds,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return results, str(exc) if not results else None
+
+        if error_indication:
+            return results, str(error_indication) if not results else None
+        if error_status:
+            msg = str(error_status.prettyPrint())
+            return results, msg if not results else None
+
+        if not var_bind_table:
+            break
+
+        next_binds: list[ObjectType] = []
+        for oid_obj, val in var_bind_table:
+            oid_str = str(oid_obj)
+            prefix = f"{column_oid}."
+            if not oid_str.startswith(prefix):
+                var_binds = []
+                break
+            index_str = oid_str[len(prefix) :]
+            if not index_str or "." in index_str:
+                continue
+            try:
+                index = int(index_str)
+                numeric = float(val)
+            except (TypeError, ValueError):
+                continue
+            results[index] = numeric
+            next_binds = [ObjectType(ObjectIdentity(oid_str))]
+
+        var_binds = next_binds
+
+    return results, error
