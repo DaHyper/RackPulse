@@ -94,6 +94,16 @@ racks:
       - name: gpu-workstation
         type: gpu
         host: localhost
-        # For remote hosts, set host to IP and ssh_user:
+        # For remote GPU hosts, set host to IP and ssh_user:
         # host: 192.168.1.50
         # ssh_user: your-user
+
+      # Or combine PVE metrics + GPU power on one entry:
+      # - name: gpu-host-1
+      #   type: pve
+      #   host: 192.168.1.51
+      #   collect_gpu_power: true
+      #   ssh_user: root
+      #   token_id: monitor@pam!rackpulse
+      #   token_secret: changeme
+      #   verify_ssl: false
