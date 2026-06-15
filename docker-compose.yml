@@ -1,0 +1,24 @@
+services:
+  rackpulse:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - rackpulse-data:/app/data
+    command: ["rackpulse", "serve", "--host", "0.0.0.0", "--port", "8080"]
+
+  # Terminal watch mode (no HTTP) — useful for localhost polling:
+  # docker compose run --rm rackpulse-watch
+  rackpulse-watch:
+    build: .
+    profiles: ["watch"]
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - rackpulse-data:/app/data
+    command: ["rackpulse", "watch"]
+    stdin_open: true
+    tty: true
+
+volumes:
+  rackpulse-data:
