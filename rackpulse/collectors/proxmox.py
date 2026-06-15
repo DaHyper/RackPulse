@@ -4,7 +4,7 @@ import httpx
 
 from rackpulse.collectors.base import Collector
 from rackpulse.config import AppConfig, DeviceConfig
-from rackpulse.models import DeviceStatus, MetricReading, VmReading
+from rackpulse.models import DeviceStatus, MetricReading
 
 # Resolved PVE node name per API endpoint (host:port).
 _node_cache: dict[str, str] = {}
@@ -48,22 +48,24 @@ class ProxmoxCollector(Collector):
                 node_status = await self._get_json(
                     client, f"{base_url}/nodes/{node}/status", headers
                 )
-                vms = await self._collect_vms(client, base_url, headers, node, device.name)
+                cpu_percent, ram_percent = self._node_utilization(node_status)
+                if cpu_percent is None or ram_percent is None:
+                    nodes_payload = await self._get_json(client, f"{base_url}/nodes", headers)
+                    for entry in nodes_payload.get("data", []):
+                        if entry.get("node") != node:
+                            continue
+                        fb_cpu, fb_ram = self._node_utilization({"data": entry})
+                        if cpu_percent is None:
+                            cpu_percent = fb_cpu
+                        if ram_percent is None:
+                            ram_percent = fb_ram
+                        break
         except httpx.HTTPError as exc:
             return self._base_reading(device, rack, DeviceStatus.UNREACHABLE, error=str(exc))
         except Exception as exc:  # noqa: BLE001
             return self._base_reading(device, rack, DeviceStatus.ERROR, error=str(exc))
 
         data = node_status.get("data", node_status)
-        cpu = data.get("cpu")
-        mem = data.get("memory")
-        maxmem = data.get("maxmem")
-
-        cpu_percent = round(float(cpu) * 100, 1) if cpu is not None else None
-        ram_percent = None
-        if mem is not None and maxmem:
-            ram_percent = round(float(mem) / float(maxmem) * 100, 1)
-
         reading = self._base_reading(
             device,
             rack,
@@ -74,8 +76,21 @@ class ProxmoxCollector(Collector):
                 extra={"node": node, "uptime": data.get("uptime")},
             ),
         )
-        reading.vms = vms
         return reading
+
+    @staticmethod
+    def _node_utilization(payload: dict) -> tuple[float | None, float | None]:
+        data = payload.get("data", payload)
+        cpu = data.get("cpu")
+        mem = data.get("memory") if data.get("memory") is not None else data.get("mem")
+        maxmem = data.get("maxmem")
+
+        cpu_percent = round(float(cpu) * 100, 1) if cpu is not None else None
+        ram_percent = None
+        if mem is not None and maxmem:
+            ram_percent = round(float(mem) / float(maxmem) * 100, 1)
+
+        return cpu_percent, ram_percent
 
     async def _detect_node(
         self,
@@ -126,43 +141,6 @@ class ProxmoxCollector(Collector):
                     if address == host:
                         return node
         return None
-
-    async def _collect_vms(
-        self,
-        client: httpx.AsyncClient,
-        base_url: str,
-        headers: dict[str, str],
-        node: str,
-        host_device: str,
-    ) -> list[VmReading]:
-        payload = await self._get_json(
-            client,
-            f"{base_url}/nodes/{node}/qemu",
-            headers,
-        )
-        vms: list[VmReading] = []
-        for vm in payload.get("data", []):
-            vmid = int(vm["vmid"])
-            name = vm.get("name", f"vm-{vmid}")
-            cpu_percent = None
-            if vm.get("cpu") is not None:
-                cpu_percent = round(float(vm["cpu"]) * 100, 1)
-
-            ram_percent = None
-            if vm.get("mem") is not None and vm.get("maxmem"):
-                ram_percent = round(float(vm["mem"]) / float(vm["maxmem"]) * 100, 1)
-
-            vms.append(
-                VmReading(
-                    vmid=vmid,
-                    name=name,
-                    host=host_device,
-                    cpu_percent=cpu_percent,
-                    ram_percent=ram_percent,
-                    status=vm.get("status"),
-                )
-            )
-        return vms
 
     async def _get_json(
         self,

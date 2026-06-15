@@ -84,19 +84,6 @@ def _render_rack_table(rack) -> Panel:
             f"{device.metrics.temperature_c:.0f}°C" if device.metrics.temperature_c else "—",
             Text(device.status.value, style=DEVICE_STATUS_STYLE.get(device.status, "white")),
         )
-        for vm in device.vms[:5]:
-            table.add_row(
-                f"  └ {vm.name}",
-                "vm",
-                str(vm.vmid),
-                "—",
-                _fmt_pct(vm.cpu_percent),
-                _fmt_pct(vm.ram_percent),
-                "—",
-                Text(vm.status or "—", style="dim"),
-            )
-        if len(device.vms) > 5:
-            table.add_row("", "", "", "", "", "", "", Text(f"  … +{len(device.vms) - 5} more VMs", style="dim"))
 
     return Panel(table, title=title, subtitle=subtitle, border_style=STATUS_STYLE.get(rack.status, "white"))
 
@@ -121,6 +108,4 @@ def render_device_detail(device: DeviceReading) -> Panel:
         lines.append(f"Error: {device.error}")
     if device.metrics.extra:
         lines.append(f"Extra: {device.metrics.extra}")
-    if device.vms:
-        lines.append(f"VMs: {len(device.vms)}")
     return Panel("\n".join(lines), title=device.name, border_style="cyan")
