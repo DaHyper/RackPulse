@@ -32,7 +32,9 @@ class RedfishPowerCollector(Collector):
         auth = (device.username, device.password)
 
         try:
-            async with httpx.AsyncClient(verify=device.verify_ssl, timeout=15.0) as client:
+            async with httpx.AsyncClient(
+                verify=device.verify_ssl, timeout=15.0, follow_redirects=True
+            ) as client:
                 power_watts, temperature_c, extra = await self._read_power(client, base_url, auth)
         except httpx.HTTPError as exc:
             return self._base_reading(device, rack, DeviceStatus.UNREACHABLE, error=str(exc))
