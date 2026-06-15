@@ -100,6 +100,8 @@ def render_device_detail(device: DeviceReading) -> Panel:
         f"Rack: {device.rack}",
         f"Status: {device.status.value}",
         f"Power: {_fmt_power(device.power_watts)}",
+        f"Voltage: {device.metrics.volts:.1f} V" if device.metrics.volts is not None else "Voltage: —",
+        f"Current: {device.metrics.amps:.2f} A" if device.metrics.amps is not None else "Current: —",
         f"CPU: {_fmt_pct(device.metrics.cpu_percent)}",
         f"RAM: {_fmt_pct(device.metrics.ram_percent)}",
         f"GPU util: {_fmt_pct(device.metrics.gpu_util_percent)}",

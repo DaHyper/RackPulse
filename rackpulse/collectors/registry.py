@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from rackpulse.collectors.arista_switch import AristaSwitchCollector
 from rackpulse.collectors.apc_pdu import PduCollector
 from rackpulse.collectors.base import Collector
 from rackpulse.collectors.nvidia_gpu import NvidiaGpuCollector
@@ -18,6 +19,7 @@ _lenovo = LenovoServerCollector()
 _pve = ProxmoxCollector()
 _nas = NasCollector()
 _gpu = NvidiaGpuCollector()
+_arista = AristaSwitchCollector()
 
 COLLECTORS: dict[str, Collector] = {
     "pdu": _pdu,
@@ -27,6 +29,7 @@ COLLECTORS: dict[str, Collector] = {
     "pve": _pve,
     "nas": _nas,
     "gpu": _gpu,
+    "arista_switch": _arista,
     # Legacy type names (still accepted)
     "apc_pdu": _pdu,
     "hp_ilo": _hp,
@@ -34,10 +37,11 @@ COLLECTORS: dict[str, Collector] = {
     "proxmox": _pve,
     "synology": _nas,
     "nvidia_gpu": _gpu,
+    "switch": _arista,
 }
 
 SUPPORTED_TYPES = sorted(k for k in COLLECTORS if k not in {
-    "apc_pdu", "hp_ilo", "dell_idrac", "proxmox", "synology", "nvidia_gpu",
+    "apc_pdu", "hp_ilo", "dell_idrac", "proxmox", "synology", "nvidia_gpu", "switch",
 })
 
 
