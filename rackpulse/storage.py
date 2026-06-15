@@ -124,6 +124,7 @@ class Storage:
                         continue
 
                     watts = device.power_watts
+                    metrics = device.metrics
                     if watts is not None:
                         conn.execute(
                             """
@@ -149,7 +150,6 @@ class Storage:
                                 ),
                             )
 
-                    metrics = device.metrics
                     if any(
                         v is not None
                         for v in (
@@ -249,27 +249,30 @@ class Storage:
                 """,
                 (device_name, cutoff),
             ).fetchall()
-        if rows:
-            return [
-                {
-                    "timestamp": row["timestamp"],
-                    "watts": row["watts"],
-                    "volts": row["volts"],
-                    "amps": row["amps"],
-                }
-                for row in rows
-            ]
+            if rows:
+                return [
+                    {
+                        "timestamp": row["timestamp"],
+                        "watts": row["watts"],
+                        "volts": row["volts"],
+                        "amps": row["amps"],
+                    }
+                    for row in rows
+                ]
 
-        rows = conn.execute(
-            """
-            SELECT timestamp, watts
-            FROM power_samples
-            WHERE device_name = ? AND timestamp >= ?
-            ORDER BY timestamp
-            """,
-            (device_name, cutoff),
-        ).fetchall()
-        return [{"timestamp": row["timestamp"], "watts": row["watts"], "volts": None, "amps": None} for row in rows]
+            rows = conn.execute(
+                """
+                SELECT timestamp, watts
+                FROM power_samples
+                WHERE device_name = ? AND timestamp >= ?
+                ORDER BY timestamp
+                """,
+                (device_name, cutoff),
+            ).fetchall()
+        return [
+            {"timestamp": row["timestamp"], "watts": row["watts"], "volts": None, "amps": None}
+            for row in rows
+        ]
 
     def latest_power_metric(self, device_name: str) -> dict[str, float | str | None] | None:
         with self._connect() as conn:
@@ -283,23 +286,24 @@ class Storage:
                 """,
                 (device_name,),
             ).fetchone()
-        if row:
-            return {
-                "timestamp": row["timestamp"],
-                "watts": row["watts"],
-                "volts": row["volts"],
-                "amps": row["amps"],
-            }
-        row = conn.execute(
-            """
-            SELECT timestamp, watts
-            FROM power_samples
-            WHERE device_name = ?
-            ORDER BY timestamp DESC
-            LIMIT 1
-            """,
-            (device_name,),
-        ).fetchone()
+            if row:
+                return {
+                    "timestamp": row["timestamp"],
+                    "watts": row["watts"],
+                    "volts": row["volts"],
+                    "amps": row["amps"],
+                }
+
+            row = conn.execute(
+                """
+                SELECT timestamp, watts
+                FROM power_samples
+                WHERE device_name = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                (device_name,),
+            ).fetchone()
         if not row:
             return None
         return {"timestamp": row["timestamp"], "watts": row["watts"], "volts": None, "amps": None}

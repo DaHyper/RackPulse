@@ -91,6 +91,11 @@ racks:
         host: 192.168.1.40
         community: public
 
+      - name: switch-1
+        type: arista_switch
+        host: 192.168.1.50
+        community: public
+
       - name: gpu-workstation
         type: gpu
         host: localhost

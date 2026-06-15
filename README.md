@@ -32,6 +32,7 @@ rackpulse watch         # live terminal dashboard
 | `lenovo_server` | Lenovo server BMC (XCC / Redfish) | Power (W), temperature |
 | `pve` | Proxmox VE node | CPU/RAM, VM inventory |
 | `nas` | NAS appliance (SNMP) | CPU, RAM, temperature |
+| `arista_switch` | Arista EOS switch (SNMP ENTITY-SENSOR-MIB) | Power (W), volts, amps |
 | `gpu` | GPU workstation (nvidia-smi) | GPU power, utilization, temperature |
 
 Device **names** are yours (`hp-server`, `pve-1`, `nas-1`, etc.). Types pick the collector — no model numbers needed.
@@ -44,6 +45,7 @@ Device **names** are yours (`hp-server`, `pve-1`, `nas-1`, etc.). Types pick the
 | `hp_server` / `dell_server` / `lenovo_server` | Per server | BMC reports chassis power (W) |
 | `pve` | No (CPU/RAM only) | Unless `collect_gpu_power: true` — then GPU draw via `nvidia-smi` over SSH |
 | `gpu` | Per host | Sum of GPU power draw (local or SSH) |
+| `arista_switch` | Per switch | V × A from ENTITY-SENSOR-MIB PSU sensors |
 | `nas` | No | Synology SNMP has temp/CPU/RAM but not system watts |
 
 For GPU hosts, add `collect_gpu_power: true` and `ssh_user` on the PVE entry, or use a separate `gpu` device:
@@ -87,6 +89,7 @@ Used for `hp_server`, `dell_server`, and `lenovo_server`. Set `verify_ssl: false
 rackpulse poll [--json]     # single poll, table or JSON output
 rackpulse watch             # continuous terminal dashboard
 rackpulse test <device>     # test connectivity for one device
+rackpulse history <device>  # power history (use --hours 168 for 7d)
 rackpulse list              # list racks and devices from config
 rackpulse serve             # optional HTTP API (requires pip install -e '.[api]')
 ```
@@ -133,6 +136,8 @@ Endpoints:
 
 - `GET /api/health` — no auth
 - `GET /api/status` — current readings
+- `GET /api/devices/{name}` — device detail (power, V, A, CPU, etc.)
+- `GET /api/devices/{name}/power?hours=24` — historical power samples
 - `POST /api/refresh` — force poll
 
 Auth is disabled by default. Enable in config when exposing beyond localhost:

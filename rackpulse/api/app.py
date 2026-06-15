@@ -84,6 +84,57 @@ def create_app(config_path: str) -> FastAPI:
             }
         )
 
+    @app.get("/api/devices/{device_name}")
+    async def device_detail(
+        device_name: str,
+        _key: Annotated[str | None, Depends(require_auth)] = None,
+    ) -> JSONResponse:
+        poller = get_poller()
+        snapshot = poller.get_snapshot()
+        reading = None
+        for rack in snapshot.racks:
+            for device in rack.devices:
+                if device.name == device_name:
+                    reading = device
+                    break
+        if reading is None:
+            return JSONResponse({"error": "Device not found"}, status_code=404)
+
+        latest = poller.storage.latest_power_metric(device_name)
+        return JSONResponse(
+            {
+                "device": device_name,
+                "type": reading.device_type,
+                "host": reading.host,
+                "rack": reading.rack,
+                "status": reading.status.value,
+                "power_watts": reading.power_watts,
+                "volts": reading.metrics.volts,
+                "amps": reading.metrics.amps,
+                "cpu_percent": reading.metrics.cpu_percent,
+                "ram_percent": reading.metrics.ram_percent,
+                "temperature_c": reading.metrics.temperature_c,
+                "last_poll": reading.last_poll.isoformat() if reading.last_poll else None,
+                "latest_stored": latest,
+            }
+        )
+
+    @app.get("/api/devices/{device_name}/power")
+    async def device_power_history(
+        device_name: str,
+        hours: float = 24,
+        _key: Annotated[str | None, Depends(require_auth)] = None,
+    ) -> JSONResponse:
+        poller = get_poller()
+        history = poller.storage.device_power_history(device_name, hours=hours)
+        return JSONResponse(
+            {
+                "device": device_name,
+                "hours": hours,
+                "samples": history,
+            }
+        )
+
     return app
 
 
