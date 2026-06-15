@@ -13,7 +13,7 @@ from rackpulse.collectors.entity_sensor import (
     pair_psu_power,
 )
 from rackpulse.collectors.power_base import PowerCollector, PowerReading
-from rackpulse.config import AppConfig, DeviceConfig
+from rackpulse.config import AppConfig, DeviceConfig, SnmpDefaults
 from rackpulse.snmp_client import snmp_walk_column
 
 _sensor_cache: dict[str, list[int]] = {}
@@ -39,7 +39,11 @@ class EntitySensorSwitchCollector(PowerCollector):
                 sensors = await self._load_sensors(device, snmp)
                 watts, volts, amps, psu_details = pair_psu_power(sensors)
                 if watts <= 0:
-                    raise ValueError("No active PSU power sensors found (watts or V×A pairs)")
+                    types = sorted({s.sensor_type for s in sensors})
+                    raise ValueError(
+                        "No PSU power sensors matched "
+                        f"(found {len(sensors)} sensors, types={types})"
+                    )
 
                 _sensor_cache[device.host] = [s.index for s in sensors]
                 method = "watts" if volts is None and amps is None else "volts_amps"
@@ -61,31 +65,22 @@ class EntitySensorSwitchCollector(PowerCollector):
 
         raise RuntimeError(last_error or "SNMP sensor poll failed")
 
-    async def _load_sensors(self, device: DeviceConfig, snmp) -> list:
-        columns = await asyncio.gather(
-            snmp_walk_column(device, OID_SENSOR_TYPE, snmp),
-            snmp_walk_column(device, OID_SENSOR_SCALE, snmp),
-            snmp_walk_column(device, OID_SENSOR_PRECISION, snmp),
-            snmp_walk_column(device, OID_SENSOR_VALUE, snmp),
-            snmp_walk_column(device, OID_SENSOR_OPER_STATUS, snmp),
-            snmp_walk_column(device, OID_SENSOR_PHYSICAL_INDEX, snmp),
-        )
+    async def _load_sensors(self, device: DeviceConfig, snmp: SnmpDefaults) -> list:
+        # Walk columns sequentially — some switches drop concurrent SNMP requests.
+        types, type_err = await snmp_walk_column(device, OID_SENSOR_TYPE, snmp)
+        if type_err and not types:
+            raise RuntimeError(f"ENTITY-SENSOR-MIB walk failed (type): {type_err}")
 
-        for result, label in zip(
-            columns, ("type", "scale", "precision", "value", "oper", "physical"), strict=True
-        ):
-            data, err = result
-            if err and not data:
-                raise RuntimeError(f"ENTITY-SENSOR-MIB walk failed ({label}): {err}")
+        scales, _ = await snmp_walk_column(device, OID_SENSOR_SCALE, snmp)
+        precisions, _ = await snmp_walk_column(device, OID_SENSOR_PRECISION, snmp)
+        values, value_err = await snmp_walk_column(device, OID_SENSOR_VALUE, snmp)
+        if value_err and not values:
+            raise RuntimeError(f"ENTITY-SENSOR-MIB walk failed (value): {value_err}")
 
-        types, _ = columns[0]
-        scales, _ = columns[1]
-        precisions, _ = columns[2]
-        values, _ = columns[3]
-        oper_statuses, _ = columns[4]
-        physical_indexes, _ = columns[5]
+        oper_statuses, _ = await snmp_walk_column(device, OID_SENSOR_OPER_STATUS, snmp)
+        physical_indexes, _ = await snmp_walk_column(device, OID_SENSOR_PHYSICAL_INDEX, snmp)
 
-        if not types:
+        if not types or not values:
             raise RuntimeError("No ENTITY-SENSOR-MIB entries returned")
 
         return build_entity_sensors(types, scales, precisions, values, oper_statuses, physical_indexes)
