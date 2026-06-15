@@ -73,14 +73,19 @@ def _render_rack_table(rack) -> Panel:
     table.add_column("Temp", justify="right")
     table.add_column("Status")
 
-    for device in sorted(rack.devices, key=lambda d: d.power_watts or 0, reverse=True):
+    for device in rack.devices:
         status_text = Text(device.status.value, style=DEVICE_STATUS_STYLE.get(device.status, "white"))
         if device.error and device.status in (DeviceStatus.UNREACHABLE, DeviceStatus.ERROR):
             short = device.error if len(device.error) <= 36 else device.error[:33] + "..."
             status_text.append(f" ({short})", style="dim")
 
+        name_cell = Text()
+        if device.parent_name:
+            name_cell.append("  ↳ ", style="dim")
+        name_cell.append(device.name, style="dim" if device.parent_name else "")
+
         table.add_row(
-            device.name,
+            name_cell,
             device.device_type,
             device.host,
             _fmt_power(device.power_watts),
