@@ -5,8 +5,11 @@ from typing import Any
 from rackpulse.config import AppConfig
 from rackpulse.maintenance import is_maintenance_active, should_silence_alerts
 from rackpulse.models import DeviceReading, PollSnapshot, RackReading
+from rackpulse.presentation.power_allocation import build_device_views
 from rackpulse.state import compute_rack_metrics, watts_to_kw
 from rackpulse.storage import Storage
+
+PDU_TYPE = "pdu"
 
 
 def _device_to_dict(device: DeviceReading) -> dict[str, Any]:
@@ -66,8 +69,7 @@ def _rack_to_dict(rack: RackReading, config: AppConfig) -> dict[str, Any]:
         "headroom_kw": headroom_kw,
         "percent_of_limit": percent_of_limit,
         "devices": [_device_to_dict(d) for d in rack.devices],
-        # Legacy dashboard field name
-        "pdus": [_device_to_dict(d) for d in rack.devices],
+        "pdus": [_device_to_dict(d) for d in rack.devices if d.device_type == PDU_TYPE],
     }
 
 
@@ -93,6 +95,7 @@ def build_dashboard_state(
 
     return {
         "racks": racks,
+        "device_view": build_device_views(snapshot.racks),
         "last_poll": snapshot.last_poll.isoformat() if snapshot.last_poll else None,
         "poll_interval_seconds": snapshot.poll_interval_seconds,
         "total_power_watts": snapshot.total_power_watts,

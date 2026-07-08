@@ -34,9 +34,14 @@
 
     <main class="main">
       <div id="maintenance-banner" class="maintenance-banner" hidden></div>
+      <div class="dashboard-tabs" role="tablist">
+        <button class="tab-btn active" id="tab-racks" type="button" data-view="racks">Rack power</button>
+        <button class="tab-btn" id="tab-devices" type="button" data-view="devices">Devices</button>
+      </div>
       <div class="rack-grid" id="rack-grid">
         <p class="loading">Loading rack data…</p>
       </div>
+      <div class="device-view" id="device-view" hidden></div>
 
       <section class="combined-view" id="combined-view" hidden>
         <h2>Combined view — all racks</h2>

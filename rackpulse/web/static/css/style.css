@@ -161,6 +161,123 @@ body {
   padding: 1.5rem 2rem;
 }
 
+.dashboard-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.tab-btn {
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 0.45rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.tab-btn:hover { color: var(--text); background: var(--surface-2); }
+.tab-btn.active {
+  color: var(--text);
+  background: var(--surface-3);
+  border-color: var(--blue);
+}
+
+.device-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.device-rack-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.device-rack-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+}
+
+.device-rack-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.device-rack-location {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.device-rack-totals {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+}
+
+.device-rack-totals span strong {
+  color: var(--text);
+}
+
+.device-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.device-table th,
+.device-table td {
+  padding: 0.65rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.device-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.device-table tr:last-child td { border-bottom: none; }
+
+.device-table tr.child-row td:first-child {
+  padding-left: 2rem;
+}
+
+.power-source {
+  display: inline-block;
+  font-size: 0.6875rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  margin-left: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.power-source.measured { background: var(--green-dim); color: var(--green); }
+.power-source.metered { background: #1a2a3d; color: var(--blue); }
+.power-source.estimated { background: var(--yellow-dim); color: var(--yellow); }
+.power-source.none { background: var(--surface-3); color: var(--text-muted); }
+
+.device-metrics {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
 .loading {
   color: var(--text-muted);
   text-align: center;

@@ -578,6 +578,11 @@ document.getElementById("test-all-btn").addEventListener("click", async () => {
   });
   renderDeviceTable();
 
+  await fetch("/api/config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
   const res = await fetch("/api/test/devices/all", { method: "POST" });
   const data = await res.json();
 
@@ -619,18 +624,28 @@ document.getElementById("add-pdu-btn").addEventListener("click", () => {
       devices: [],
     });
   }
+  const rackIdx = config.racks.length - 1;
   deviceRows.push({
-    rackIdx: 0,
+    rackIdx,
+    rackName: config.racks[rackIdx].name,
+    warningKw: config.racks[rackIdx].warning_kw,
+    criticalKw: config.racks[rackIdx].critical_kw,
     type: "pdu",
-    name: `pdu-${deviceRows.length + 1}`,
+    name: `device-${deviceRows.length + 1}`,
     host: "192.168.1.10",
     community: "public",
+    username: "",
+    password: "",
+    token_id: "",
+    token_secret: "",
+    ssh_user: "",
+    parent: "",
+    verify_ssl: false,
+    collect_gpu_power: false,
     testStatus: "pending",
+    testError: null,
   });
-  syncRowsToConfig();
-  buildDeviceRows();
   renderDeviceTable();
-  renderThresholds();
 });
 
 document.getElementById("add-recipient-btn").addEventListener("click", () => {
