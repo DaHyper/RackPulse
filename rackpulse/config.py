@@ -130,6 +130,14 @@ class DeviceConfig:
 
 
 @dataclass
+class PollConfig:
+    """Controls how aggressively RackPulse polls devices in parallel."""
+
+    device_concurrency: int = 12
+    bmc_concurrency: int = 4
+
+
+@dataclass
 class RackConfig:
     name: str
     location: str = ""
@@ -142,6 +150,7 @@ class RackConfig:
 @dataclass
 class AppConfig:
     poll_interval_seconds: int = 60
+    poll: PollConfig = field(default_factory=PollConfig)
     snmp: SnmpDefaults = field(default_factory=SnmpDefaults)
     pdu: PduSnmpConfig = field(default_factory=PduSnmpConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
@@ -351,6 +360,7 @@ def _resolve_config_secrets(config: AppConfig, store: SecretsStore | None) -> Ap
     ]
     return AppConfig(
         poll_interval_seconds=config.poll_interval_seconds,
+        poll=config.poll,
         snmp=snmp,
         pdu=config.pdu,
         storage=config.storage,
@@ -423,8 +433,15 @@ def load_config(path: str | Path, *, resolve_secrets: bool = True) -> AppConfig:
         port=int(server_raw.get("port", 8080)),
     )
 
+    poll_raw = raw.get("poll", {}) or {}
+    poll = PollConfig(
+        device_concurrency=max(1, int(poll_raw.get("device_concurrency", 12))),
+        bmc_concurrency=max(1, int(poll_raw.get("bmc_concurrency", 4))),
+    )
+
     config = AppConfig(
         poll_interval_seconds=int(raw.get("poll_interval_seconds", 60)),
+        poll=poll,
         snmp=snmp,
         pdu=pdu,
         storage=storage,

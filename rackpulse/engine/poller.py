@@ -23,7 +23,6 @@ BMC_DEVICE_TYPES = frozenset({
     "hp_ilo",
     "dell_idrac",
 })
-BMC_POLL_CONCURRENCY = 2
 
 
 class Poller:
@@ -34,11 +33,25 @@ class Poller:
         self._storage = Storage(self._config.storage.path)
         self._snapshot = self._bootstrap_snapshot_from_config()
         self._last_good: dict[str, DeviceReading] = {}
-        self._bmc_semaphore = asyncio.Semaphore(BMC_POLL_CONCURRENCY)
+        self._bmc_limit = 0
+        self._device_limit = 0
+        self._bmc_semaphore = asyncio.Semaphore(1)
+        self._device_semaphore = asyncio.Semaphore(1)
+        self._sync_poll_limits(self._config)
         self._task: asyncio.Task[None] | None = None
         self._stop: asyncio.Event | None = None
         self._alert_tracker: AlertTracker | None = None
         self._init_alerts()
+
+    def _sync_poll_limits(self, config: AppConfig) -> None:
+        bmc = max(1, config.poll.bmc_concurrency)
+        device = max(1, config.poll.device_concurrency)
+        if bmc != self._bmc_limit:
+            self._bmc_semaphore = asyncio.Semaphore(bmc)
+            self._bmc_limit = bmc
+        if device != self._device_limit:
+            self._device_semaphore = asyncio.Semaphore(device)
+            self._device_limit = device
 
     def _bootstrap_snapshot_from_config(self) -> PollSnapshot:
         """Show configured racks immediately before the first poll completes."""
@@ -84,6 +97,7 @@ class Poller:
     def reload_config(self) -> None:
         with self._lock:
             self._config = load_config(self.config_path)
+            self._sync_poll_limits(self._config)
             self._snapshot.poll_interval_seconds = self._config.poll_interval_seconds
             if self._alert_tracker is not None:
                 self._alert_tracker.cooldown_seconds = self._config.alerts.cooldown_minutes * 60
@@ -119,13 +133,31 @@ class Poller:
     async def poll_once(self) -> PollSnapshot:
         config = self.config
         now = datetime.now(timezone.utc)
+        work_items = [
+            (rack, device)
+            for rack in config.racks
+            for device in rack.devices
+        ]
+        completed: dict[str, dict[str, DeviceReading]] = {
+            rack.name: {} for rack in config.racks
+        }
 
-        rack_readings = []
-        for rack in config.racks:
-            devices = await asyncio.gather(
-                *[self._poll_device(device, rack, config, now) for device in rack.devices]
+        async def poll_and_track(rack: RackConfig, device: DeviceConfig) -> None:
+            reading = await self._poll_device(device, rack, config, now)
+            completed[rack.name][device.name] = reading
+            self._apply_progressive_snapshot(config, completed, now)
+
+        await asyncio.gather(
+            *[poll_and_track(rack, device) for rack, device in work_items]
+        )
+
+        rack_readings = [
+            self._aggregate_rack(
+                rack,
+                [completed[rack.name][device.name] for device in rack.devices],
             )
-            rack_readings.append(self._aggregate_rack(rack, list(devices)))
+            for rack in config.racks
+        ]
 
         snapshot = PollSnapshot(
             racks=rack_readings,
@@ -145,6 +177,48 @@ class Poller:
             self._snapshot = snapshot
 
         return snapshot
+
+    def _apply_progressive_snapshot(
+        self,
+        config: AppConfig,
+        completed: dict[str, dict[str, DeviceReading]],
+        now: datetime,
+    ) -> None:
+        """Refresh the in-memory snapshot as devices finish during a poll cycle."""
+        with self._lock:
+            previous = {
+                rack.name: {device.name: device for device in rack.devices}
+                for rack in self._snapshot.racks
+            }
+            last_poll = self._snapshot.last_poll
+
+        rack_readings = []
+        for rack in config.racks:
+            devices: list[DeviceReading] = []
+            for device_cfg in rack.devices:
+                if device_cfg.name in completed[rack.name]:
+                    devices.append(completed[rack.name][device_cfg.name])
+                elif device_cfg.name in previous.get(rack.name, {}):
+                    devices.append(previous[rack.name][device_cfg.name])
+                else:
+                    devices.append(
+                        DeviceReading(
+                            name=device_cfg.name,
+                            device_type=device_cfg.type,
+                            host=device_cfg.host,
+                            rack=rack.name,
+                            status=DeviceStatus.OK,
+                            parent_name=device_cfg.parent,
+                        )
+                    )
+            rack_readings.append(self._aggregate_rack(rack, devices))
+
+        with self._lock:
+            self._snapshot = PollSnapshot(
+                racks=rack_readings,
+                last_poll=last_poll,
+                poll_interval_seconds=config.poll_interval_seconds,
+            )
 
     def _process_alerts(self, snapshot: PollSnapshot, config: AppConfig) -> None:
         if self._alert_tracker is None:
@@ -190,11 +264,12 @@ class Poller:
         rack_name = rack.name if isinstance(rack, RackConfig) else rack
         try:
             collector = get_collector(device.type)
-            if device.type in BMC_DEVICE_TYPES:
-                async with self._bmc_semaphore:
+            async with self._device_semaphore:
+                if device.type in BMC_DEVICE_TYPES:
+                    async with self._bmc_semaphore:
+                        reading = await collector.collect(device, rack_name, config)
+                else:
                     reading = await collector.collect(device, rack_name, config)
-            else:
-                reading = await collector.collect(device, rack_name, config)
         except Exception as exc:  # noqa: BLE001
             reading = DeviceReading(
                 name=device.name,

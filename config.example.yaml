@@ -2,6 +2,13 @@
 
 poll_interval_seconds: 60
 
+# Parallel polling — dashboard/serve poll all devices in the background on this interval.
+# device_concurrency: max devices polled at once (across all racks)
+# bmc_concurrency: max BMC/iLO polls at once (BMCs are slower; keep this lower)
+poll:
+  device_concurrency: 12
+  bmc_concurrency: 4
+
 storage:
   path: ./data/rackpulse.db
   retain_days: 90
