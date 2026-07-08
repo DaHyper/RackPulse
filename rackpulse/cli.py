@@ -180,6 +180,23 @@ def cmd_history(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    config_path = resolve_config_path(args.config)
+    if not config_path.exists():
+        console.print(f"[red]Config not found:[/red] {config_path}")
+        return 1
+
+    enable_web = getattr(args, "web", False)
+    if enable_web:
+        try:
+            from rackpulse.api.app import run_server
+        except ImportError:
+            console.print(
+                "[red]Web dependencies not installed.[/red] Run: pip install -e '.[web]'"
+            )
+            return 1
+        run_server(str(config_path), host=args.host, port=args.port, enable_web=True)
+        return 0
+
     try:
         from rackpulse.api.app import run_server
     except ImportError:
@@ -188,12 +205,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         )
         return 1
 
-    config_path = resolve_config_path(args.config)
-    if not config_path.exists():
-        console.print(f"[red]Config not found:[/red] {config_path}")
-        return 1
-
-    run_server(str(config_path), host=args.host, port=args.port)
+    run_server(str(config_path), host=args.host, port=args.port, enable_web=False)
     return 0
 
 
@@ -243,9 +255,14 @@ def build_parser() -> argparse.ArgumentParser:
     history.add_argument("--json", action="store_true", help="Output JSON")
     history.set_defaults(func=cmd_history)
 
-    serve = sub.add_parser("serve", help="Start optional HTTP API (requires [api] extras)")
+    serve = sub.add_parser("serve", help="Start HTTP API (use --web for dashboard + config UI)")
     serve.add_argument("--host", default=None, help="Bind host (default from config)")
     serve.add_argument("--port", type=int, default=None, help="Bind port (default from config)")
+    serve.add_argument(
+        "--web",
+        action="store_true",
+        help="Enable web dashboard and config UI (requires [web] extras)",
+    )
     serve.set_defaults(func=cmd_serve)
 
     return parser

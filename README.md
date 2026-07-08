@@ -1,10 +1,21 @@
 # RackPulse
 
-Multi-rack power and infrastructure monitoring for PDUs, HP/Dell/Lenovo servers, PVE nodes, NAS, and GPU hosts. Stores history locally and shows a live terminal dashboard.
+Multi-rack power and infrastructure monitoring for PDUs, HP/Dell/Lenovo servers, PVE nodes, NAS, switches, and GPU hosts. Stores history locally, shows a live terminal dashboard, and optionally serves a web dashboard with alerting.
 
-Evolved from [PDU-Power-Monitor](https://github.com/DaHyper/PDU-Power-Monitor) with support for full rack inventory beyond PDUs.
+Evolved from [PDU-Power-Monitor](https://github.com/DaHyper/PDU-Power-Monitor) — same rack dashboard UX, RackPulse backend for all device types.
 
 **Setup guides:** [Mac](MAC_SETUP.md) · [Linux (CLI)](LINUX_SETUP.md)
+
+## Install matrix
+
+| Install | What you get |
+|---------|----------------|
+| `pip install -e .` | CLI, terminal dashboard, polling engine (no HTTP deps) |
+| `pip install -e ".[api]"` | JSON HTTP API |
+| `pip install -e ".[web]"` | Web dashboard + config UI + API |
+| `pip install -e ".[everything]"` | Same as `[web]` (convenience alias) |
+
+Alert delivery (email + webhooks) is built into the core package and activates when configured in `config.yaml`.
 
 ## Quick start
 
@@ -14,13 +25,82 @@ source .venv/bin/activate
 pip install -e .
 
 cp config.example.yaml config.yaml
-# Edit config.yaml with your rack IPs and credentials
+# Edit config.yaml — use $secret for passwords (stored in data/secrets.db)
 
-rackpulse list          # show configured devices
-rackpulse test pdu-1    # test one device
-rackpulse poll          # one-shot poll + dashboard
-rackpulse watch         # live terminal dashboard
+rackpulse list
+rackpulse test pdu-1
+rackpulse poll
+rackpulse watch
 ```
+
+## Web dashboard (optional)
+
+```bash
+pip install -e ".[web]"
+rackpulse serve --web
+```
+
+- Dashboard: `http://127.0.0.1:8080/`
+- Config UI: `http://127.0.0.1:8080/config`
+
+Enable auth before exposing beyond localhost:
+
+```yaml
+auth:
+  enabled: true
+  api_key: $secret   # stored in data/secrets.db when saved via config UI
+```
+
+The browser prompts for your API key on first visit (stored in session storage).
+
+## Secrets (passwords outside config.yaml)
+
+Sensitive values use `$secret` in `config.yaml` and are stored in a local SQLite secrets database (default `./data/secrets.db`):
+
+```yaml
+secrets:
+  path: ./data/secrets.db
+
+devices:
+  - name: hp-server
+    type: hp_server
+    password: $secret
+```
+
+The config UI writes secrets to the database automatically. Config export never includes plaintext passwords.
+
+You can also use environment variables: `password: $env:MY_BMC_PASSWORD`
+
+## Alerting (optional)
+
+Configure in `config.yaml`:
+
+```yaml
+alerts:
+  cooldown_minutes: 15
+  smtp:
+    host: smtp.company.com
+    port: 587
+    security: tls
+    username: alerts@company.com
+    password: $secret
+    from_address: rackpulse@company.com
+    recipients:
+      - ops@company.com
+  webhooks:
+    - name: Ops Slack
+      url: https://hooks.slack.com/services/...
+      format: slack
+      enabled: true
+
+maintenance:
+  enabled: false
+  silence_alerts: true
+  message: ""
+  until: null
+```
+
+Alerts fire on rack **Warning/Danger** threshold crossings, device unreachable events, and recoveries. Cooldown prevents repeat notifications. Maintenance mode suppresses delivery while polling continues.
 
 ## Device types
 
@@ -32,146 +112,60 @@ rackpulse watch         # live terminal dashboard
 | `lenovo_server` | Lenovo server BMC (XCC / Redfish) | Power (W), temperature |
 | `pve` | Proxmox VE node | CPU/RAM, VM inventory |
 | `nas` | NAS appliance (SNMP) | CPU, RAM, temperature |
-| `arista_switch` | Arista EOS switch (SNMP ENTITY-SENSOR-MIB) | Power (W), volts, amps |
-| `cisco_switch` | Cisco switch (SNMP ENTITY-SENSOR-MIB) | Power (W), volts, amps |
-| `dell_switch` | Dell switch (SNMP ENTITY-SENSOR-MIB) | Power (W), volts, amps |
-| `gpu` | GPU workstation (nvidia-smi) | GPU power, utilization, temperature |
+| `arista_switch` / `cisco_switch` / `dell_switch` | Switches (ENTITY-SENSOR-MIB) | Power (W), volts, amps |
+| `gpu` | GPU workstation (nvidia-smi) | GPU power, utilization |
 
-Device **names** are yours (`hp-server`, `pve-1`, `nas-1`, etc.). Types pick the collector — no model numbers needed.
-
-### Where power readings come from
-
-| Source | Power? | Notes |
-|--------|--------|-------|
-| `pdu` | Rack total | One number for the whole PDU — not per-outlet unless your hardware supports branch metering |
-| `hp_server` / `dell_server` / `lenovo_server` | Per server | BMC reports chassis power (W) |
-| `pve` | No (CPU/RAM only) | Unless `collect_gpu_power: true` — then GPU draw via `nvidia-smi` over SSH |
-| `gpu` | Per host | Sum of GPU power draw (local or SSH) |
-| `arista_switch` / `cisco_switch` / `dell_switch` | Per switch | V × A or direct watt sensors via ENTITY-SENSOR-MIB |
-| `nas` | No | Synology SNMP has temp/CPU/RAM but not system watts |
-
-For GPU hosts, add `collect_gpu_power: true` and `ssh_user` on the PVE entry, or use a separate `gpu` device:
-
-```yaml
-- name: gpu-host-1
-  type: pve
-  host: 192.168.1.50
-  collect_gpu_power: true
-  ssh_user: root
-  token_id: monitor@pam!rackpulse
-  token_secret: changeme
-  verify_ssl: false
-```
-
-Requires passwordless SSH from the machine running RackPulse to the PVE host. GPU power is **card draw only** — add ~50–100 W for CPU/PSU overhead, or add an `hp_server` entry if the box has a BMC.
-
-### PDU SNMP divisor
-
-Confirm scaling with a live walk on your PDU:
-
-```bash
-snmpwalk -v2c -c public <pdu-ip> 1.3.6.1.4.1.318.1.1.26.4.3.1.5
-```
-
-Adjust `pdu.power_divisor` in config until readings match expected kW.
-
-### PVE API token
-
-Create a read-only token in the Proxmox UI with **`Sys.Audit`** and **`VM.Audit`** (the built-in `PVEAuditor` role works). With **Privilege Separation** enabled on the token, assign that role to the token itself (e.g. `root@pam!rackpulse` on path `/`).
-
-Each PVE device only needs `host`, `token_id`, and `token_secret` — the Proxmox **node name is auto-detected** by matching `host` to the node's network addresses. Set `node:` only if you need to override.
-
-### Server BMC (Redfish)
-
-Used for `hp_server`, `dell_server`, and `lenovo_server`. Set `verify_ssl: false` for default self-signed BMC certificates.
+See `config.example.yaml` for full examples (PVE tokens, GPU over SSH, PDU divisors, etc.).
 
 ## Commands
 
 ```bash
-rackpulse poll [--json]     # single poll, table or JSON output
-rackpulse watch             # continuous terminal dashboard
-rackpulse test <device>     # test connectivity for one device
-rackpulse history <device>  # power history (use --hours 168 for 7d)
-rackpulse list              # list racks and devices from config
-rackpulse serve             # optional HTTP API (requires pip install -e '.[api]')
+rackpulse poll [--json]
+rackpulse watch
+rackpulse test <device>
+rackpulse history <device> [--hours 168]
+rackpulse list
+rackpulse serve              # JSON API only ([api])
+rackpulse serve --web        # dashboard + config UI ([web])
 ```
 
-## Configuration
+## Migration from PDU-Power-Monitor
 
-All settings live in `config.yaml`. Racks contain devices; each device has a `type` and type-specific fields.
+| Legacy key | RackPulse key |
+|------------|---------------|
+| `racks[].pdus[]` | `racks[].devices[]` with `type: pdu` |
+| `racks[].description` | `racks[].location` |
+| `racks[].warning_kw` / `critical_kw` | same |
+| `snmp.power_oid` / `power_divisor` | `pdu.power_oid` / `pdu.power_divisor` |
+| `alert_cooldown_minutes` | `alerts.cooldown_minutes` |
+| `smtp` / `webhooks` | `alerts.smtp` / `alerts.webhooks` |
+| `maintenance` | same |
+| Plaintext passwords | `$secret` (stored in `data/secrets.db`) |
 
-```yaml
-racks:
-  - name: rack-1
-    location: datacenter row 1
-    warning_kw: 4.0
-    critical_kw: 5.0
-    devices:
-      - name: pdu-1
-        type: pdu
-        host: 192.168.1.10
-        community: public
-      - name: hp-server
-        type: hp_server
-        host: 192.168.1.20
-        username: bmc-user
-        password: changeme
-        verify_ssl: false
-      - name: pve-1
-        type: pve
-        host: 192.168.1.30
-        token_id: monitor@pam!rackpulse
-        token_secret: changeme
-        verify_ssl: false
-```
+Run the web UI with `rackpulse serve --web` for the same dashboard experience, now covering all RackPulse device types.
 
-History is stored in SQLite at `storage.path` (default `./data/rackpulse.db`).
-
-## Optional API
-
-```bash
-pip install -e ".[api]"
-rackpulse serve
-```
-
-Endpoints:
-
-- `GET /api/health` — no auth
-- `GET /api/status` — current readings
-- `GET /api/devices/{name}` — device detail (power, V, A, CPU, etc.)
-- `GET /api/devices/{name}/power?hours=24` — historical power samples
-- `POST /api/refresh` — force poll
-
-Auth is disabled by default. Enable in config when exposing beyond localhost:
-
-```yaml
-auth:
-  enabled: true
-  api_key: your-secret-key
-```
-
-Requests then require header `X-API-Key: your-secret-key`.
-
-## Docker (optional)
+## Docker
 
 ```bash
 cp config.example.yaml config.yaml
-docker compose up rackpulse        # HTTP API on :8080
-docker compose --profile watch run --rm rackpulse-watch   # terminal watch
+docker compose up rackpulse   # web dashboard + API on :8080
 ```
 
 ## Project layout
 
 ```
 rackpulse/
-  cli.py              Terminal commands
-  config.py           YAML configuration
-  storage.py          SQLite history
-  snmp_client.py      SNMP helpers
-  collectors/         Device-specific collectors
-  engine/poller.py    Multi-rack polling engine
-  display/terminal.py Rich dashboard
-  api/                Optional FastAPI + auth stub
+  cli.py                 Terminal commands
+  config.py              YAML configuration + secrets resolution
+  secrets.py             SQLite secrets store
+  storage.py             SQLite history
+  collectors/            Device-specific collectors
+  engine/poller.py       Polling engine + alert hook
+  display/terminal.py    Rich terminal dashboard
+  presentation/          Dashboard JSON for web UI
+  alerts/                Email + webhook delivery
+  api/                   FastAPI (JSON + optional web routes)
+  web/                   Dashboard templates + static assets
 ```
 
 ## License

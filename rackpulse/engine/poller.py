@@ -5,10 +5,13 @@ import logging
 import threading
 from datetime import datetime, timezone
 
+from rackpulse.alerts import AlertNotifier, AlertTracker
 from rackpulse.collectors.registry import get_collector
 from rackpulse.config import AppConfig, DeviceConfig, RackConfig, load_config
-from rackpulse.models import DeviceReading, DeviceStatus, PollSnapshot, RackReading, RackStatus
 from rackpulse.display.order import order_rack_devices
+from rackpulse.maintenance import should_silence_alerts
+from rackpulse.models import DeviceReading, DeviceStatus, PollSnapshot
+from rackpulse.state import aggregate_rack_reading
 from rackpulse.storage import Storage
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,18 @@ class Poller:
         self._bmc_semaphore = asyncio.Semaphore(BMC_POLL_CONCURRENCY)
         self._task: asyncio.Task[None] | None = None
         self._stop: asyncio.Event | None = None
+        self._alert_tracker: AlertTracker | None = None
+        self._init_alerts()
+
+    def _init_alerts(self) -> None:
+        self._alert_tracker = AlertTracker(self._config.alerts.cooldown_minutes)
+
+    @staticmethod
+    def _has_alert_config(config: AppConfig) -> bool:
+        smtp = config.alerts.smtp
+        return bool(smtp.host and smtp.recipients) or any(
+            wh.enabled and wh.url for wh in config.alerts.webhooks
+        )
 
     @property
     def config(self) -> AppConfig:
@@ -48,6 +63,10 @@ class Poller:
         with self._lock:
             self._config = load_config(self.config_path)
             self._snapshot.poll_interval_seconds = self._config.poll_interval_seconds
+            if self._alert_tracker is not None:
+                self._alert_tracker.cooldown_seconds = self._config.alerts.cooldown_minutes * 60
+            else:
+                self._init_alerts()
 
     def get_snapshot(self) -> PollSnapshot:
         with self._lock:
@@ -79,7 +98,7 @@ class Poller:
         config = self.config
         now = datetime.now(timezone.utc)
 
-        rack_readings: list[RackReading] = []
+        rack_readings = []
         for rack in config.racks:
             devices = await asyncio.gather(
                 *[self._poll_device(device, rack, config, now) for device in rack.devices]
@@ -98,10 +117,24 @@ class Poller:
         except Exception:
             logger.exception("Failed to persist snapshot")
 
+        self._process_alerts(snapshot, config)
+
         with self._lock:
             self._snapshot = snapshot
 
         return snapshot
+
+    def _process_alerts(self, snapshot: PollSnapshot, config: AppConfig) -> None:
+        if self._alert_tracker is None:
+            return
+        if should_silence_alerts(config.maintenance):
+            return
+        if not self._has_alert_config(config):
+            return
+        notifier = AlertNotifier(config.alerts.smtp, config.alerts.webhooks)
+        if not notifier.configured:
+            return
+        self._alert_tracker.process(snapshot.racks, notifier)
 
     async def poll_device_by_name(self, device_name: str) -> DeviceReading:
         config = self.config
@@ -162,41 +195,8 @@ class Poller:
 
         return reading
 
-    def _aggregate_rack(self, rack: RackConfig, devices: list[DeviceReading]) -> RackReading:
-        power_values = [
-            d.power_watts for d in devices if d.power_watts is not None and d.status != DeviceStatus.UNREACHABLE
-        ]
-        total_watts = round(sum(power_values), 1) if power_values else None
-
-        warning_watts = rack.warning_kw * 1000 if rack.warning_kw is not None else None
-        critical_watts = rack.critical_kw * 1000 if rack.critical_kw is not None else None
-        cap_watts = rack.power_cap_kw * 1000 if rack.power_cap_kw is not None else critical_watts
-
-        status = RackStatus.UNKNOWN
-        if total_watts is not None:
-            if critical_watts is not None and total_watts >= critical_watts:
-                status = RackStatus.CRITICAL
-            elif warning_watts is not None and total_watts >= warning_watts:
-                status = RackStatus.WARNING
-            else:
-                status = RackStatus.OK
-
-        if any(d.status == DeviceStatus.STALE for d in devices) and status == RackStatus.OK:
-            status = RackStatus.WARNING
-
-        if total_watts is None and any(d.status == DeviceStatus.OK for d in devices):
-            status = RackStatus.OK
-
+    def _aggregate_rack(self, rack: RackConfig, devices: list[DeviceReading]):
         parent_by_name = {device.name: device.parent for device in rack.devices}
         ordered_devices = order_rack_devices(devices, parent_by_name=parent_by_name)
-
-        return RackReading(
-            name=rack.name,
-            location=rack.location,
-            power_watts=total_watts,
-            power_cap_watts=cap_watts,
-            status=status,
-            devices=ordered_devices,
-            warning_watts=warning_watts,
-            critical_watts=critical_watts,
-        )
+        reading = aggregate_rack_reading(rack, ordered_devices)
+        return reading

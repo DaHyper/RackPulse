@@ -6,14 +6,35 @@ storage:
   path: ./data/rackpulse.db
   retain_days: 90
 
-# Auth is optional for now. Set enabled: true when you expose the API.
+secrets:
+  path: ./data/secrets.db
+
+# Auth — enable when exposing the web UI or API beyond localhost
 auth:
   enabled: false
-  api_key: ""
+  api_key: $secret
 
 server:
   host: 127.0.0.1
   port: 8080
+
+alerts:
+  cooldown_minutes: 15
+  smtp:
+    host: ""
+    port: 587
+    security: tls
+    username: ""
+    password: $secret
+    from_address: ""
+    recipients: []
+  webhooks: []
+
+maintenance:
+  enabled: false
+  silence_alerts: true
+  message: ""
+  until: null
 
 snmp:
   version: "2c"
@@ -51,14 +72,14 @@ racks:
         type: hp_server
         host: 192.168.1.20
         username: bmc-user
-        password: changeme
+        password: $secret
         verify_ssl: false
 
       - name: dell-server
         type: dell_server
         host: 192.168.1.21
         username: bmc-user
-        password: changeme
+        password: $secret
         verify_ssl: false
 
       # - name: lenovo-server
@@ -73,7 +94,7 @@ racks:
         host: 192.168.1.30
         parent: hp-server  # nest under the BMC host in the dashboard
         token_id: monitor@pam!rackpulse
-        token_secret: changeme
+        token_secret: $secret
         # node: optional — auto-detected from host IP; set only to override
         verify_ssl: false
 

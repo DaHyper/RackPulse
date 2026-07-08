@@ -6,7 +6,7 @@ services:
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - rackpulse-data:/app/data
-    command: ["rackpulse", "serve", "--host", "0.0.0.0", "--port", "8080"]
+    command: ["rackpulse", "serve", "--web", "--host", "0.0.0.0", "--port", "8080"]
 
   # Terminal watch mode (no HTTP) — useful for localhost polling:
   # docker compose run --rm rackpulse-watch
