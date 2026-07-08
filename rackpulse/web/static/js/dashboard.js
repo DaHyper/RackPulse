@@ -6,13 +6,6 @@ const STATUS_LABELS = {
   unknown: "Unknown",
 };
 
-const POWER_SOURCE_LABELS = {
-  metered: "PDU",
-  measured: "Measured",
-  estimated: "Estimated",
-  none: "—",
-};
-
 let pollTimer = null;
 let activeView = "racks";
 let lastData = null;
@@ -26,6 +19,23 @@ async function fetchStatus() {
 function formatKw(value) {
   if (value == null) return "—";
   return Number(value).toFixed(2);
+}
+
+function formatWatts(watts) {
+  if (watts == null) return "—";
+  if (watts >= 1000) return `${(watts / 1000).toFixed(2)} kW`;
+  return `${Math.round(watts)} W`;
+}
+
+function formatPct(value) {
+  if (value == null) return "—";
+  return `${Math.round(value)}%`;
+}
+
+function statusClass(status) {
+  if (status === "ok") return "ok";
+  if (status === "stale") return "pending";
+  return "fail";
 }
 
 function esc(str) {
@@ -138,38 +148,29 @@ function renderRackCard(rack, history) {
     </div>`;
 }
 
-function renderDeviceMetrics(device) {
-  const parts = [];
-  if (device.cpu_percent != null) parts.push(`CPU ${device.cpu_percent.toFixed(0)}%`);
-  if (device.ram_percent != null) parts.push(`RAM ${device.ram_percent.toFixed(0)}%`);
-  if (device.temperature_c != null) parts.push(`${device.temperature_c.toFixed(0)}°C`);
-  return parts.length ? `<span class="device-metrics">${parts.join(" · ")}</span>` : "";
-}
-
-function renderDeviceRow(device) {
+function renderPollRow(device) {
   const childCls = device.parent ? "child-row" : "";
   const prefix = device.parent ? "↳ " : "";
-  const source = device.power_source || "none";
-  const sourceLabel = POWER_SOURCE_LABELS[source] || source;
-  const power = device.power_kw != null ? `${formatKw(device.power_kw)} kW` : "—";
-  const statusCls =
-    device.status === "unreachable" || device.status === "error" ? "unreachable" : device.status;
+  const temp =
+    device.temperature_c != null ? `${Math.round(device.temperature_c)}°C` : "—";
+  const statusText = device.error
+    ? `${device.status} (${device.error.length > 36 ? device.error.slice(0, 33) + "…" : device.error})`
+    : device.status;
 
   return `
     <tr class="${childCls}">
       <td>${prefix}${esc(device.name)}</td>
       <td>${esc(device.type)}</td>
       <td>${esc(device.host)}</td>
-      <td>
-        ${power}
-        <span class="power-source ${source}">${sourceLabel}</span>
-      </td>
-      <td><span class="conn-status ${statusCls === "ok" ? "ok" : statusCls === "stale" ? "pending" : "fail"}">${esc(device.status)}</span></td>
-      <td>${renderDeviceMetrics(device)}</td>
+      <td class="num">${formatWatts(device.power_watts)}</td>
+      <td class="num">${formatPct(device.cpu_percent)}</td>
+      <td class="num">${formatPct(device.ram_percent)}</td>
+      <td class="num">${temp}</td>
+      <td><span class="conn-status ${statusClass(device.status)}">${esc(statusText)}</span></td>
     </tr>`;
 }
 
-function renderDeviceView(racks) {
+function renderPollView(racks) {
   if (!racks.length) {
     return '<p class="loading">No racks configured. <a href="/config" style="color:var(--blue)">Add devices</a>.</p>';
   }
@@ -177,30 +178,39 @@ function renderDeviceView(racks) {
   return racks
     .map((rack) => {
       const devices = rack.devices || [];
-      const rows = devices.map(renderDeviceRow).join("");
+      const rows = devices.map(renderPollRow).join("");
+      const gap =
+        rack.unaccounted_watts != null
+          ? `<span>Unmetered gap: <strong>${formatWatts(rack.unaccounted_watts)}</strong></span>`
+          : "";
+
       return `
         <section class="device-rack-panel">
           <div class="device-rack-header">
             <div>
-              <div class="device-rack-title">${esc(rack.name)}</div>
-              <div class="device-rack-location">${esc(rack.location || "")}</div>
+              <div class="device-rack-title">${esc(rack.name)}${rack.location ? ` — ${esc(rack.location)}` : ""}</div>
+              <div class="device-rack-location">
+                <span class="status-badge ${rack.status || "unknown"}">${STATUS_LABELS[rack.status] || rack.status}</span>
+                <span class="poll-rack-power">${formatWatts(rack.power_watts != null ? rack.power_watts : rack.power_kw != null ? rack.power_kw * 1000 : null)}</span>
+              </div>
             </div>
             <div class="device-rack-totals">
-              <span>PDU total: <strong>${formatKw(rack.pdu_total_kw)} kW</strong></span>
-              <span>Measured: <strong>${formatKw(rack.measured_kw)} kW</strong></span>
-              <span>Estimated: <strong>${formatKw(rack.estimated_kw)} kW</strong></span>
-              <span>Unallocated: <strong>${formatKw(rack.unallocated_kw)} kW</strong></span>
+              <span>PDU metered: <strong>${formatWatts(rack.pdu_total_watts)}</strong></span>
+              <span>Devices reporting: <strong>${formatWatts(rack.measured_device_watts)}</strong></span>
+              ${gap}
             </div>
           </div>
-          <table class="device-table">
+          <table class="device-table poll-table">
             <thead>
               <tr>
                 <th>Device</th>
                 <th>Type</th>
                 <th>Host</th>
                 <th>Power</th>
+                <th>CPU</th>
+                <th>RAM</th>
+                <th>Temp</th>
                 <th>Status</th>
-                <th>Metrics</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -261,8 +271,10 @@ function updateMaintenanceBanner(data) {
   banner.innerHTML = `<strong>Maintenance mode</strong> — ${esc(msg)} ${silence}`;
 }
 
-function updateHeader(racks, interval) {
-  const deviceCount = racks.reduce((n, r) => n + (r.devices || r.pdus || []).length, 0);
+function updateHeader(racks, interval, deviceView) {
+  const deviceCount = deviceView?.length
+    ? deviceView.reduce((n, r) => n + (r.devices || []).length, 0)
+    : racks.reduce((n, r) => n + (r.devices || r.pdus || []).length, 0);
   document.getElementById("header-subtitle").textContent =
     `${racks.length} rack${racks.length !== 1 ? "s" : ""} · ${deviceCount} device${deviceCount !== 1 ? "s" : ""}`;
   document.getElementById("poll-interval").textContent = interval;
@@ -301,7 +313,7 @@ function render(data) {
     rackGrid.hidden = false;
     deviceView.hidden = true;
     document.getElementById("combined-view").hidden = true;
-    updateHeader([], data.poll_interval_seconds);
+    updateHeader([], data.poll_interval_seconds, []);
     updateLastPoll(data.last_poll);
     return;
   }
@@ -309,7 +321,7 @@ function render(data) {
   if (activeView === "devices") {
     rackGrid.hidden = true;
     deviceView.hidden = false;
-    deviceView.innerHTML = renderDeviceView(data.device_view || []);
+    deviceView.innerHTML = renderPollView(data.device_view || []);
     document.getElementById("combined-view").hidden = true;
   } else {
     rackGrid.hidden = false;
@@ -320,7 +332,7 @@ function render(data) {
   }
 
   updateMaintenanceBanner(data);
-  updateHeader(racks, data.poll_interval_seconds);
+  updateHeader(racks, data.poll_interval_seconds, data.device_view);
   updateLastPoll(data.last_poll);
   schedulePoll(data.poll_interval_seconds);
 }

@@ -216,8 +216,22 @@ body {
 }
 
 .device-rack-location {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
   font-size: 0.8125rem;
   color: var(--text-muted);
+}
+
+.poll-rack-power {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.device-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .device-rack-totals {
