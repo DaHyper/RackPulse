@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from rackpulse.models import DeviceReading, RackReading
+from rackpulse.models import DeviceReading, RackReading, RackStatus
 from rackpulse.state import watts_to_kw
 
 PDU_TYPE = "pdu"
@@ -37,7 +37,7 @@ def _device_poll_row(device: DeviceReading) -> dict:
 
 
 def build_rack_poll_view(rack: RackReading) -> dict:
-    """Poll-style rack breakdown: actual per-device readings."""
+    """Poll-style rack breakdown: actual per-device readings, no estimated splits."""
     pdu_total_watts = 0.0
     measured_device_watts = 0.0
     has_pdu = False
