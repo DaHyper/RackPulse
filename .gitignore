@@ -216,6 +216,7 @@ __marimo__/
 
 # Local data and secrets
 config.yaml
+config.yaml.bak*
 data/
 .DS_Store
 
