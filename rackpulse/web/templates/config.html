@@ -170,6 +170,31 @@
           </section>
 
           <section class="panel">
+            <h2>Security &amp; server</h2>
+            <p class="panel-desc">Enable API key auth before exposing the dashboard beyond localhost.</p>
+            <div class="form-stack">
+              <label class="checkbox-row">
+                <input type="checkbox" id="auth-enabled">
+                Require API key (recommended for web dashboard)
+              </label>
+              <label>
+                API key
+                <input type="password" id="auth-api-key" placeholder="Stored in secrets DB when saved">
+              </label>
+              <div class="form-row">
+                <label>
+                  Bind host
+                  <input type="text" id="server-host" placeholder="127.0.0.1">
+                </label>
+                <label>
+                  Port
+                  <input type="number" id="server-port" min="1" max="65535">
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
             <h2>Maintenance &amp; alert silence</h2>
             <p class="panel-desc">Suppress alert emails and webhooks during planned work. Polling continues normally.</p>
             <div class="form-stack">

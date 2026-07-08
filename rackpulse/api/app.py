@@ -42,7 +42,13 @@ def create_app(config_path: str, *, enable_web: bool = False) -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> JSONResponse:
-        return JSONResponse({"ok": True, "version": __version__})
+        return JSONResponse(
+            {
+                "ok": True,
+                "version": __version__,
+                "auth_required": config.auth.enabled,
+            }
+        )
 
     @app.get("/api/status")
     async def status(
@@ -190,6 +196,11 @@ def run_server(
     if enable_web:
         print(f"Dashboard: http://{bind_host}:{bind_port}/")
         print(f"Configuration: http://{bind_host}:{bind_port}/config")
+        if not config.auth.enabled:
+            print(
+                "WARNING: Auth is disabled. Enable auth.enabled in config before "
+                "exposing the dashboard on your network."
+            )
     if config.auth.enabled:
         print("Auth: enabled (X-API-Key header required)")
     else:

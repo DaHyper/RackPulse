@@ -1,5 +1,6 @@
 (function () {
   const KEY = "rackpulse_api_key";
+  let authRequired = null;
 
   function getApiKey() {
     return sessionStorage.getItem(KEY) || "";
@@ -10,14 +11,25 @@
     else sessionStorage.removeItem(KEY);
   }
 
+  async function isAuthRequired() {
+    if (authRequired !== null) return authRequired;
+    try {
+      const res = await fetch("/api/health");
+      if (!res.ok) return false;
+      const data = await res.json();
+      authRequired = !!data.auth_required;
+      return authRequired;
+    } catch {
+      return false;
+    }
+  }
+
   async function ensureApiKey() {
     const existing = getApiKey();
     if (existing) return existing;
+    if (!(await isAuthRequired())) return "";
 
-    const key = window.prompt(
-      "Enter your RackPulse API key (required when auth is enabled).\n" +
-        "Leave blank if auth is disabled on this server."
-    );
+    const key = window.prompt("Enter your RackPulse API key:");
     if (key) setApiKey(key.trim());
     return getApiKey();
   }
@@ -34,6 +46,7 @@
     }
     const response = await originalFetch(input, init);
     if (response.status === 401 && url.startsWith("/api/")) {
+      authRequired = true;
       setApiKey("");
       await ensureApiKey();
     }

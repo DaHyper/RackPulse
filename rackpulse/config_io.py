@@ -368,3 +368,20 @@ def merge_config_update(current: AppConfig, update: dict[str, Any]) -> dict[str,
         merged["racks"] = deep["racks"]
 
     return merged
+
+
+def migrate_plaintext_secrets(path: str | Path) -> bool:
+    """Move any plaintext secret fields from config.yaml into secrets.db."""
+    config_path = Path(path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    with config_path.open(encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+
+    preview = load_config(config_path, resolve_secrets=False)
+    store = open_secrets_store(preview)
+    keys_before = set(store.list_keys())
+    save_config(config_path, raw)
+    keys_after = set(open_secrets_store(load_config(config_path, resolve_secrets=False)).list_keys())
+    return bool(keys_after - keys_before) or SECRET_REF in config_path.read_text(encoding="utf-8")

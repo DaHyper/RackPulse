@@ -353,6 +353,25 @@ function syncMaintenanceFromForm() {
   config.maintenance.until = localInputToIso(document.getElementById("maintenance-until").value) || null;
 }
 
+function renderAuthAndServer() {
+  const auth = config.auth || {};
+  const server = config.server || {};
+  document.getElementById("auth-enabled").checked = !!auth.enabled;
+  document.getElementById("auth-api-key").value = "";
+  document.getElementById("server-host").value = server.host || "127.0.0.1";
+  document.getElementById("server-port").value = server.port || 8080;
+}
+
+function syncAuthAndServerFromForm() {
+  if (!config.auth) config.auth = {};
+  if (!config.server) config.server = {};
+  config.auth.enabled = document.getElementById("auth-enabled").checked;
+  const apiKey = document.getElementById("auth-api-key").value;
+  if (apiKey) config.auth.api_key = apiKey;
+  config.server.host = document.getElementById("server-host").value.trim() || "127.0.0.1";
+  config.server.port = parseInt(document.getElementById("server-port").value, 10) || 8080;
+}
+
 function renderSnmp() {
   const snmp = config.snmp || {};
   const v3 = snmp.v3 || {};
@@ -391,6 +410,7 @@ function render() {
   document.getElementById("energy-divisor").value = pdu.energy_divisor ?? 10;
 
   renderSnmp();
+  renderAuthAndServer();
   renderMaintenance();
 
   document.getElementById("smtp-host").value = alerts.smtp.host || "";
@@ -490,6 +510,7 @@ function readFormIntoConfig() {
   syncRowsFromTable();
   syncThresholdsFromForm();
   syncWebhooksFromForm();
+  syncAuthAndServerFromForm();
   syncMaintenanceFromForm();
   syncSnmpFromForm();
 

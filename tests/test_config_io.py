@@ -98,3 +98,26 @@ def test_config_export_masks_secrets(tmp_path: Path):
     config = load_config(config_path)
     exported = config_to_dict(config, mask_secrets=True)
     assert exported["alerts"]["smtp"]["password"] == SECRET_REF
+
+
+def test_secrets_migrate_moves_plaintext(tmp_path: Path):
+    from rackpulse.config_io import migrate_plaintext_secrets
+
+    config_path = tmp_path / "config.yaml"
+    secrets_path = tmp_path / "secrets.db"
+    config_path.write_text(
+        """
+storage:
+  path: ./data/rackpulse.db
+secrets:
+  path: {secrets}
+auth:
+  api_key: my-api-key
+racks: []
+""".format(secrets=secrets_path),
+        encoding="utf-8",
+    )
+
+    assert migrate_plaintext_secrets(config_path) is True
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert raw["auth"]["api_key"] == SECRET_REF

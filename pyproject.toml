@@ -36,7 +36,10 @@ everything = [
 ]
 
 [project.scripts]
-rackpulse = "rackpulse.cli:main"
+rackpulse = "rackpulse_console:main"
+
+[tool.setuptools]
+py-modules = ["rackpulse_console"]
 
 [tool.setuptools.packages.find]
 where = ["."]

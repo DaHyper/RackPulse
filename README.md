@@ -22,7 +22,7 @@ Alert delivery (email + webhooks) is built into the core package and activates w
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+./scripts/bootstrap_venv.sh
 
 cp config.example.yaml config.yaml
 # Edit config.yaml — use $secret for passwords (stored in data/secrets.db)
@@ -127,6 +127,10 @@ rackpulse history <device> [--hours 168]
 rackpulse list
 rackpulse serve              # JSON API only ([api])
 rackpulse serve --web        # dashboard + config UI ([web])
+rackpulse dashboard          # shortcut for serve --web
+rackpulse migrate-config        # convert PDU-Power-Monitor / v1 → v2
+rackpulse migrate-config --dry-run old-config.yaml
+python scripts/migrate_config.py config.yaml
 ```
 
 ## Migration from PDU-Power-Monitor
@@ -143,6 +147,16 @@ rackpulse serve --web        # dashboard + config UI ([web])
 | Plaintext passwords | `$secret` (stored in `data/secrets.db`) |
 
 Run the web UI with `rackpulse serve --web` for the same dashboard experience, now covering all RackPulse device types.
+
+**Migrate an existing config:**
+
+```bash
+# From PDU-Power-Monitor or RackPulse v1 config.yaml:
+rackpulse migrate-config
+# Or: python scripts/migrate_config.py /path/to/old-config.yaml -o config.yaml
+```
+
+Creates a `.bak` backup, converts structure to v2, and moves passwords into `secrets.db`.
 
 ## Docker
 

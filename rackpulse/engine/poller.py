@@ -32,13 +32,35 @@ class Poller:
         self._lock = threading.Lock()
         self._config = load_config(config_path)
         self._storage = Storage(self._config.storage.path)
-        self._snapshot = PollSnapshot(poll_interval_seconds=self._config.poll_interval_seconds)
+        self._snapshot = self._bootstrap_snapshot_from_config()
         self._last_good: dict[str, DeviceReading] = {}
         self._bmc_semaphore = asyncio.Semaphore(BMC_POLL_CONCURRENCY)
         self._task: asyncio.Task[None] | None = None
         self._stop: asyncio.Event | None = None
         self._alert_tracker: AlertTracker | None = None
         self._init_alerts()
+
+    def _bootstrap_snapshot_from_config(self) -> PollSnapshot:
+        """Show configured racks immediately before the first poll completes."""
+        rack_readings = []
+        for rack in self._config.racks:
+            devices = [
+                DeviceReading(
+                    name=device.name,
+                    device_type=device.type,
+                    host=device.host,
+                    rack=rack.name,
+                    status=DeviceStatus.OK,
+                    parent_name=device.parent,
+                )
+                for device in rack.devices
+            ]
+            rack_readings.append(self._aggregate_rack(rack, devices))
+        return PollSnapshot(
+            racks=rack_readings,
+            last_poll=None,
+            poll_interval_seconds=self._config.poll_interval_seconds,
+        )
 
     def _init_alerts(self) -> None:
         self._alert_tracker = AlertTracker(self._config.alerts.cooldown_minutes)
