@@ -26,10 +26,10 @@ def test_compute_rack_status_critical():
     assert status == RackStatus.CRITICAL
 
 
-def test_stale_device_elevates_ok_to_warning():
+def test_stale_device_does_not_elevate_ok_to_warning():
     devices = [_device("pdu-1", 1000, DeviceStatus.STALE)]
     status = compute_rack_status(1000, 4000, 5000, devices)
-    assert status == RackStatus.WARNING
+    assert status == RackStatus.OK
 
 
 def test_compute_rack_metrics():
@@ -98,9 +98,9 @@ def test_alert_tracker_device_unreachable():
     assert "UNREACHABLE" in notifier.send.call_args.kwargs["subject"]
 
 
-def test_stale_under_threshold_does_not_send_wattage_alert():
-    """Link drop rewrites UNREACHABLE→STALE and elevates rack to WARNING;
-    that must not be reported as an over-wattage threshold crossing."""
+def test_stale_pdu_does_not_send_wattage_alert():
+    """Link drop rewrites UNREACHABLE→STALE with cached kW; that must not
+    drive threshold alerts even if cached draw is over the warning line."""
     tracker = AlertTracker(cooldown_minutes=0)
     notifier = MagicMock()
     rack_cfg = RackConfig(name="rack-1", warning_kw=2.0, critical_kw=3.0, devices=[])
@@ -109,11 +109,19 @@ def test_stale_under_threshold_does_not_send_wattage_alert():
     tracker.process([ok_rack], notifier)
     assert notifier.send.call_count == 0
 
-    stale_rack = aggregate_rack_reading(
+    # Under-threshold stale
+    stale_ok = aggregate_rack_reading(
         rack_cfg, [_device("pdu-1", 1000, DeviceStatus.STALE)]
     )
-    assert stale_rack.status == RackStatus.WARNING
-    tracker.process([stale_rack], notifier)
+    assert stale_ok.status == RackStatus.OK
+    tracker.process([stale_ok], notifier)
+
+    # Over-threshold cached kW while offline — still incomplete, no wattage alert
+    stale_high = aggregate_rack_reading(
+        rack_cfg, [_device("pdu-1", 2500, DeviceStatus.STALE)]
+    )
+    assert stale_high.status == RackStatus.WARNING
+    tracker.process([stale_high], notifier)
 
     subjects = [call.kwargs["subject"] for call in notifier.send.call_args_list]
     assert not any("WARNING:" in s or "CRITICAL:" in s for s in subjects)

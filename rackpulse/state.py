@@ -22,6 +22,9 @@ def compute_rack_status(
     critical_watts: float | None,
     devices: list[DeviceReading],
 ) -> RackStatus:
+    # Threshold status is based on last-known kW only. Stale/unreachable PDUs are
+    # surfaced on the device itself and must not upgrade the rack to WARNING — that
+    # previously caused false over-wattage alerts whenever the link dropped.
     status = RackStatus.UNKNOWN
     if total_watts is not None:
         if critical_watts is not None and total_watts >= critical_watts:
@@ -30,9 +33,6 @@ def compute_rack_status(
             status = RackStatus.WARNING
         else:
             status = RackStatus.OK
-
-    if any(d.status == DeviceStatus.STALE for d in devices) and status == RackStatus.OK:
-        status = RackStatus.WARNING
 
     if total_watts is None and any(d.status == DeviceStatus.OK for d in devices):
         status = RackStatus.OK
