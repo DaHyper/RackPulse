@@ -96,3 +96,46 @@ def test_alert_tracker_device_unreachable():
     tracker.process([rack], notifier)
     assert notifier.send.call_count == 1
     assert "UNREACHABLE" in notifier.send.call_args.kwargs["subject"]
+
+
+def test_stale_under_threshold_does_not_send_wattage_alert():
+    """Link drop rewrites UNREACHABLE→STALE and elevates rack to WARNING;
+    that must not be reported as an over-wattage threshold crossing."""
+    tracker = AlertTracker(cooldown_minutes=0)
+    notifier = MagicMock()
+    rack_cfg = RackConfig(name="rack-1", warning_kw=2.0, critical_kw=3.0, devices=[])
+
+    ok_rack = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 1000)])
+    tracker.process([ok_rack], notifier)
+    assert notifier.send.call_count == 0
+
+    stale_rack = aggregate_rack_reading(
+        rack_cfg, [_device("pdu-1", 1000, DeviceStatus.STALE)]
+    )
+    assert stale_rack.status == RackStatus.WARNING
+    tracker.process([stale_rack], notifier)
+
+    subjects = [call.kwargs["subject"] for call in notifier.send.call_args_list]
+    assert not any("WARNING:" in s or "CRITICAL:" in s for s in subjects)
+    assert any("DEVICE UNREACHABLE" in s for s in subjects)
+
+    recovered = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 1000)])
+    tracker.process([recovered], notifier)
+    subjects = [call.kwargs["subject"] for call in notifier.send.call_args_list]
+    assert not any("RECOVERED: rack-1 back to normal" in s for s in subjects)
+    assert any("DEVICE RECOVERED" in s for s in subjects)
+
+
+def test_real_wattage_warning_still_alerts():
+    tracker = AlertTracker(cooldown_minutes=0)
+    notifier = MagicMock()
+    rack_cfg = RackConfig(name="rack-1", warning_kw=2.0, critical_kw=3.0, devices=[])
+
+    ok_rack = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 1000)])
+    tracker.process([ok_rack], notifier)
+
+    warning_rack = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 2500)])
+    tracker.process([warning_rack], notifier)
+
+    subjects = [call.kwargs["subject"] for call in notifier.send.call_args_list]
+    assert any("WARNING:" in s for s in subjects)

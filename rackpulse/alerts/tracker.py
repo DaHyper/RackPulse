@@ -3,8 +3,26 @@ from __future__ import annotations
 import time
 
 from rackpulse.alerts.notifier import AlertNotifier
-from rackpulse.models import DeviceReading, DeviceStatus, RackReading, RackStatus
+from rackpulse.models import DeviceStatus, RackReading, RackStatus
 from rackpulse.state import watts_to_kw
+
+_CONNECTIVITY_DOWN = frozenset({DeviceStatus.UNREACHABLE, DeviceStatus.STALE})
+
+
+def _is_power_threshold_breach(rack: RackReading, status: RackStatus) -> bool:
+    """True only when wattage itself meets the WARNING/CRITICAL threshold.
+
+    RackStatus.WARNING can also be raised by stale/unreachable devices even when
+    draw is under threshold; those must not trigger over-wattage alerts.
+    """
+    power = rack.power_watts
+    if power is None:
+        return False
+    if status == RackStatus.CRITICAL:
+        return rack.critical_watts is not None and power >= rack.critical_watts
+    if status == RackStatus.WARNING:
+        return rack.warning_watts is not None and power >= rack.warning_watts
+    return False
 
 
 class AlertTracker:
@@ -13,6 +31,7 @@ class AlertTracker:
     def __init__(self, cooldown_minutes: int) -> None:
         self.cooldown_seconds = cooldown_minutes * 60
         self._rack_state: dict[str, RackStatus] = {}
+        self._rack_power_breach: dict[str, bool] = {}
         self._device_state: dict[str, DeviceStatus] = {}
         self._last_sent: dict[str, float] = {}
 
@@ -30,11 +49,13 @@ class AlertTracker:
         for rack in racks:
             prev = self._rack_state.get(rack.name, RackStatus.UNKNOWN)
             curr = rack.status
+            was_breach = self._rack_power_breach.get(rack.name, False)
+            is_breach = _is_power_threshold_breach(rack, curr)
             power_kw = watts_to_kw(rack.power_watts) or 0.0
             warning_kw = watts_to_kw(rack.warning_watts) or 0.0
             critical_kw = watts_to_kw(rack.critical_watts) or 0.0
 
-            if curr in (RackStatus.WARNING, RackStatus.CRITICAL) and curr != prev:
+            if is_breach and curr != prev:
                 key = self._key("rack", rack.name, curr.value)
                 if self._can_send(key):
                     level = "WARNING" if curr == RackStatus.WARNING else "CRITICAL"
@@ -51,7 +72,7 @@ class AlertTracker:
                     )
                     self._mark_sent(key)
 
-            if prev in (RackStatus.WARNING, RackStatus.CRITICAL) and curr == RackStatus.OK:
+            if was_breach and not is_breach and curr == RackStatus.OK:
                 key = self._key("rack", rack.name, "recovery")
                 if self._can_send(key):
                     notifier.send(
@@ -65,15 +86,21 @@ class AlertTracker:
                     self._mark_sent(key)
 
             self._rack_state[rack.name] = curr
+            self._rack_power_breach[rack.name] = is_breach
 
             for device in rack.devices:
                 device_key = f"{rack.name}:{device.name}"
                 prev_device = self._device_state.get(device_key, DeviceStatus.OK)
                 curr_device = device.status
 
-                if curr_device == DeviceStatus.UNREACHABLE and prev_device != DeviceStatus.UNREACHABLE:
+                if curr_device in _CONNECTIVITY_DOWN and prev_device not in _CONNECTIVITY_DOWN:
                     key = self._key("device", device_key, "unreachable")
                     if self._can_send(key):
+                        reason = (
+                            "is unreachable (using last-known reading)."
+                            if curr_device == DeviceStatus.STALE
+                            else "is unreachable."
+                        )
                         notifier.send(
                             subject=(
                                 f"[RackPulse] DEVICE UNREACHABLE: {device.name} "
@@ -81,7 +108,7 @@ class AlertTracker:
                             ),
                             body=(
                                 f"Device {device.name} ({device.device_type}) at {device.host} "
-                                f"is unreachable.\n"
+                                f"{reason}\n"
                                 f"Rack: {rack.name}\n"
                                 f"Error: {device.error or 'timeout'}\n"
                             ),
@@ -90,8 +117,8 @@ class AlertTracker:
                         self._mark_sent(key)
 
                 if (
-                    curr_device in (DeviceStatus.OK, DeviceStatus.STALE)
-                    and prev_device == DeviceStatus.UNREACHABLE
+                    curr_device == DeviceStatus.OK
+                    and prev_device in _CONNECTIVITY_DOWN
                 ):
                     key = self._key("device", device_key, "recovery")
                     if self._can_send(key):
