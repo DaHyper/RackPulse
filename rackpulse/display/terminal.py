@@ -98,8 +98,10 @@ def _render_rack_table(rack) -> Panel:
     return Panel(table, title=title, subtitle=subtitle, border_style=STATUS_STYLE.get(rack.status, "white"))
 
 
-def print_snapshot(console: Console, snapshot: PollSnapshot) -> None:
+def print_snapshot(console: Console, snapshot: PollSnapshot, *, maintenance_message: str | None = None) -> None:
     console.clear()
+    if maintenance_message:
+        console.print(f"[yellow bold]Maintenance:[/yellow bold] {maintenance_message}")
     console.print(render_snapshot(snapshot))
 
 

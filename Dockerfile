@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml README.md requirements.txt ./
 COPY rackpulse ./rackpulse
 
-RUN pip install --no-cache-dir -e ".[api]"
+RUN pip install --no-cache-dir -e ".[web]"
 
 ENV RACKPULSE_CONFIG=/app/config.yaml
 
@@ -17,4 +17,4 @@ VOLUME ["/app/data", "/app/config.yaml"]
 
 EXPOSE 8080
 
-CMD ["rackpulse", "serve", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["rackpulse", "serve", "--web", "--host", "0.0.0.0", "--port", "8080"]

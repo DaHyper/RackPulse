@@ -78,15 +78,16 @@ Your shell prompt should show `(.venv)`. Run `source .venv/bin/activate` again e
 
 ```bash
 pip install --upgrade pip
-pip install -e .
+./scripts/bootstrap_venv.sh
 ```
 
-This installs the `rackpulse` CLI command.
+This installs the `rackpulse` CLI command (works from any directory).
 
-Optional — if you want the HTTP API later:
+Optional — if you want the HTTP API or web dashboard later:
 
 ```bash
-pip install -e ".[api]"
+pip install -e ".[api]"    # JSON API only
+pip install -e ".[web]"     # dashboard + config UI + API
 ```
 
 ---
@@ -122,18 +123,18 @@ racks:
         type: hp_server
         host: 192.168.1.20
         username: bmc-user
-        password: changeme
+        password: $secret
         verify_ssl: false
 
       - name: pve-1
         type: pve
         host: 192.168.1.30
         token_id: monitor@pam!rackpulse
-        token_secret: changeme
+        token_secret: $secret
         verify_ssl: false
 ```
 
-> `config.yaml` is git-ignored — it won't be committed. Keep SNMP communities, BMC passwords, and API tokens here only.
+> `config.yaml` is git-ignored — it won't be committed. Passwords and API tokens use `$secret` and are stored in `./data/secrets.db` (see `rackpulse secrets migrate` for existing plaintext configs).
 
 ---
 
@@ -286,9 +287,34 @@ ssh-copy-id your-user@192.168.1.50
 
 ---
 
+## Optional — Web dashboard on Mac
+
+Install web extras and start the dashboard (same UI as PDU-Power-Monitor, all device types):
+
+```bash
+pip install -e ".[web]"
+rackpulse dashboard
+```
+
+Open http://127.0.0.1:8080/ — config editor at http://127.0.0.1:8080/config
+
+Enable auth before exposing on your LAN:
+
+```yaml
+auth:
+  enabled: true
+  api_key: $secret
+```
+
+Migrate plaintext passwords from an older config:
+
+```bash
+rackpulse secrets migrate
+```
+
 ## Optional — HTTP API on Mac
 
-If you installed the API extras:
+If you installed the API extras only:
 
 ```bash
 pip install -e ".[api]"
@@ -297,14 +323,13 @@ rackpulse serve
 
 Open http://127.0.0.1:8080/api/health
 
----
-
 ## Optional — Docker on Mac
 
 ```bash
 cp config.example.yaml config.yaml
 # edit config.yaml first
 
+docker compose up rackpulse          # web dashboard on :8080
 docker compose --profile watch run --rm rackpulse-watch
 ```
 

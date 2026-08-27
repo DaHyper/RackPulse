@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rackpulse"
-version = "0.1.0"
+version = "2.0.0"
 description = "Multi-rack power and infrastructure monitoring"
 readme = "README.md"
 license = { text = "MIT" }
@@ -21,10 +21,29 @@ api = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
 ]
+web = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "jinja2>=3.1.4",
+    "python-multipart>=0.0.9",
+]
+alerts = []
+everything = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "jinja2>=3.1.4",
+    "python-multipart>=0.0.9",
+]
 
 [project.scripts]
-rackpulse = "rackpulse.cli:main"
+rackpulse = "rackpulse_console:main"
+
+[tool.setuptools]
+py-modules = ["rackpulse_console"]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["rackpulse*"]
+
+[tool.setuptools.package-data]
+"rackpulse.web" = ["templates/*", "static/**/*"]

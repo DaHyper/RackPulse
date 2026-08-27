@@ -277,6 +277,29 @@ rackpulse watch
 
 ---
 
+## Optional — Web dashboard (24/7 server)
+
+For the browser dashboard with alerts (recommended on a management VM):
+
+```bash
+pip install -e ".[web]"
+rackpulse dashboard --host 0.0.0.0 --port 8080
+```
+
+Or with Docker:
+
+```bash
+docker compose up -d rackpulse
+```
+
+Enable `auth.enabled` in config before binding to `0.0.0.0`. Migrate plaintext passwords:
+
+```bash
+rackpulse secrets migrate
+```
+
+---
+
 ## Troubleshooting
 
 ### `python3-venv` not found (Debian/Ubuntu)
@@ -320,4 +343,6 @@ chmod 755 data
 
 - Place RackPulse on a management VM with network access to all racks
 - Tune per-rack `warning_kw` / `critical_kw` thresholds
-- Use `rackpulse poll --json` with cron or a wrapper script for custom alerting
+- Run `rackpulse watch` for continuous terminal monitoring
+- Run `rackpulse dashboard` for the web UI with email/webhook alerts
+- See `RELEASE_NOTES_v2.0.0.md` for v2 upgrade notes

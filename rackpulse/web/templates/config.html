@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RackPulse — Configuration</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-icon">⚡</span>
+          <div>
+            <h1>Configuration</h1>
+            <p class="subtitle">Devices, thresholds, and alert settings</p>
+          </div>
+        </div>
+      </div>
+      <nav class="header-nav">
+        <a href="/" class="nav-link">Dashboard</a>
+        <a href="/config" class="nav-link active">Configuration</a>
+      </nav>
+      <div class="header-right">
+        <button class="btn btn-secondary" id="export-config-btn" type="button">Export config</button>
+        <label class="btn btn-secondary import-btn">
+          Import config
+          <input type="file" id="import-config-input" accept=".yaml,.yml" hidden>
+        </label>
+        <button class="btn btn-primary" id="save-btn" type="button">Save configuration</button>
+      </div>
+    </header>
+
+    <main class="main config-main">
+      <div id="save-status" class="save-status" hidden></div>
+      <p class="hint panel-desc" style="margin-bottom:1rem;">
+        Passwords and API tokens are stored in a local secrets database (<code>data/secrets.db</code>),
+        not in <code>config.yaml</code>. Export omits secret values.
+      </p>
+
+      <div class="config-grid">
+        <div class="config-left">
+          <section class="panel">
+            <h2>Devices</h2>
+            <p class="panel-desc">Each device is polled by type. Rack power sums devices that report watts.</p>
+            <div class="pdu-table-wrap">
+              <table class="pdu-table" id="pdu-table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Rack</th>
+                    <th>Host</th>
+                    <th>Credentials</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="pdu-tbody"></tbody>
+              </table>
+            </div>
+            <div class="panel-actions">
+              <button class="btn btn-secondary" id="test-all-btn" type="button">Test all connections</button>
+              <button class="btn btn-secondary" id="add-pdu-btn" type="button">+ Add device</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Racks</h2>
+            <p class="panel-desc">Set per-rack warning and critical power thresholds (kW).</p>
+            <div class="threshold-grid" id="threshold-grid"></div>
+            <div class="panel-actions">
+              <button class="btn btn-secondary" id="add-rack-btn" type="button">+ Add rack</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Polling &amp; SNMP</h2>
+            <div class="form-row">
+              <label>
+                Poll interval (seconds)
+                <input type="number" id="poll-interval" min="10" max="300" step="5">
+              </label>
+              <label>
+                Alert cooldown (minutes)
+                <input type="number" id="alert-cooldown" min="1" max="120" step="1">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                PDU power OID
+                <input type="text" id="power-oid">
+              </label>
+              <label>
+                Power divisor
+                <input type="number" id="power-divisor" step="any">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                PDU energy OID
+                <input type="text" id="energy-oid">
+              </label>
+              <label>
+                Energy divisor
+                <input type="number" id="energy-divisor" step="any">
+              </label>
+            </div>
+            <div class="form-row">
+              <label>
+                SNMP version (default)
+                <select id="snmp-version">
+                  <option value="1">v1</option>
+                  <option value="2c">v2c</option>
+                  <option value="3">v3</option>
+                </select>
+              </label>
+            </div>
+            <div id="snmp-v3-panel" class="snmp-v3-panel" hidden>
+              <h3>SNMP v3 credentials</h3>
+              <div class="form-row">
+                <label>
+                  Username
+                  <input type="text" id="v3-username">
+                </label>
+                <label>
+                  Security level
+                  <select id="v3-security-level">
+                    <option value="noAuthNoPriv">noAuthNoPriv</option>
+                    <option value="authNoPriv">authNoPriv</option>
+                    <option value="authPriv">authPriv</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row">
+                <label>
+                  Auth password
+                  <input type="password" id="v3-auth-password" placeholder="Stored in secrets DB when saved">
+                </label>
+                <label>
+                  Auth protocol
+                  <select id="v3-auth-protocol">
+                    <option value="MD5">MD5</option>
+                    <option value="SHA">SHA</option>
+                    <option value="SHA224">SHA224</option>
+                    <option value="SHA256">SHA256</option>
+                    <option value="SHA384">SHA384</option>
+                    <option value="SHA512">SHA512</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row">
+                <label>
+                  Priv password
+                  <input type="password" id="v3-priv-password" placeholder="Stored in secrets DB when saved">
+                </label>
+                <label>
+                  Priv protocol
+                  <select id="v3-priv-protocol">
+                    <option value="DES">DES</option>
+                    <option value="AES">AES</option>
+                    <option value="AES192">AES192</option>
+                    <option value="AES256">AES256</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Security &amp; server</h2>
+            <p class="panel-desc">Enable API key auth before exposing the dashboard beyond localhost.</p>
+            <div class="form-stack">
+              <label class="checkbox-row">
+                <input type="checkbox" id="auth-enabled">
+                Require API key (recommended for web dashboard)
+              </label>
+              <label>
+                API key
+                <input type="password" id="auth-api-key" placeholder="Stored in secrets DB when saved">
+              </label>
+              <div class="form-row">
+                <label>
+                  Bind host
+                  <input type="text" id="server-host" placeholder="127.0.0.1">
+                </label>
+                <label>
+                  Port
+                  <input type="number" id="server-port" min="1" max="65535">
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Maintenance &amp; alert silence</h2>
+            <p class="panel-desc">Suppress alert emails and webhooks during planned work. Polling continues normally.</p>
+            <div class="form-stack">
+              <label class="checkbox-row">
+                <input type="checkbox" id="maintenance-enabled">
+                Maintenance mode enabled
+              </label>
+              <label class="checkbox-row">
+                <input type="checkbox" id="maintenance-silence" checked>
+                Silence alerts while maintenance is active
+              </label>
+              <label>
+                Message (shown on dashboard)
+                <input type="text" id="maintenance-message" placeholder="Planned work — alerts suppressed">
+              </label>
+              <label>
+                Auto-disable after (optional)
+                <input type="datetime-local" id="maintenance-until">
+              </label>
+            </div>
+          </section>
+        </div>
+
+        <div class="config-right">
+          <section class="panel">
+            <h2>Webhook alerts</h2>
+            <p class="panel-desc">Send alerts to Slack, Discord, or any URL that accepts JSON POST.</p>
+            <div id="webhook-list" class="webhook-list"></div>
+            <div class="panel-actions">
+              <button class="btn btn-secondary" id="add-webhook-btn" type="button">+ Add webhook</button>
+              <button class="btn btn-secondary" id="test-webhooks-btn" type="button">Send test webhook</button>
+            </div>
+          </section>
+
+          <section class="panel panel-tall">
+            <h2>SMTP alert settings</h2>
+            <div class="form-stack">
+              <label>
+                SMTP host
+                <input type="text" id="smtp-host" placeholder="smtp.company.com">
+              </label>
+              <div class="form-row">
+                <label>
+                  Port
+                  <input type="number" id="smtp-port" value="587">
+                </label>
+                <label>
+                  Security
+                  <select id="smtp-security">
+                    <option value="none">None</option>
+                    <option value="tls">TLS</option>
+                    <option value="ssl">SSL</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                Username
+                <input type="text" id="smtp-username">
+              </label>
+              <label>
+                Password
+                <input type="password" id="smtp-password" placeholder="Stored in secrets DB when saved">
+              </label>
+              <label>
+                From address
+                <input type="email" id="smtp-from">
+              </label>
+              <label>
+                Alert recipients
+                <div class="recipients-wrap" id="recipients-wrap"></div>
+                <div class="recipient-add">
+                  <input type="email" id="recipient-input" placeholder="email@company.com">
+                  <button class="btn btn-secondary btn-sm" id="add-recipient-btn" type="button">Add</button>
+                </div>
+              </label>
+              <button class="btn btn-secondary" id="test-smtp-btn" type="button">Send test email</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <span>RackPulse v{{ version }}</span>
+    </footer>
+  </div>
+
+  <script src="/static/js/auth.js"></script>
+  <script src="/static/js/config.js"></script>
+</body>
+</html>

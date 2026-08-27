@@ -7,14 +7,27 @@ import logging
 import sys
 from pathlib import Path
 
+from pathlib import Path
+
 from rich.console import Console
 
 from rackpulse import __version__
 from rackpulse.config import load_config, resolve_config_path
 from rackpulse.display.terminal import print_snapshot, render_device_detail
 from rackpulse.engine.poller import Poller
+from rackpulse.maintenance import is_maintenance_active
 
 console = Console()
+
+
+def _maintenance_banner(config) -> str | None:
+    maintenance = config.maintenance
+    if not is_maintenance_active(maintenance):
+        return None
+    msg = maintenance.message or "Maintenance mode active"
+    if maintenance.silence_alerts:
+        msg += " (alerts silenced)"
+    return msg
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -74,7 +87,7 @@ def cmd_poll(args: argparse.Namespace) -> int:
         }
         print(json.dumps(payload, indent=2))
     else:
-        print_snapshot(console, snapshot)
+        print_snapshot(console, snapshot, maintenance_message=_maintenance_banner(poller.config))
 
     return 0
 
@@ -82,7 +95,7 @@ def cmd_poll(args: argparse.Namespace) -> int:
 async def _watch_loop(poller: Poller, interval: int | None) -> None:
     while True:
         snapshot = await poller.poll_once()
-        print_snapshot(console, snapshot)
+        print_snapshot(console, snapshot, maintenance_message=_maintenance_banner(poller.config))
         wait = interval if interval is not None else poller.config.poll_interval_seconds
         await asyncio.sleep(wait)
 
@@ -179,7 +192,81 @@ def cmd_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_migrate_config(args: argparse.Namespace) -> int:
+    from rackpulse.migrate_config import migrate_config_file
+
+    input_path = Path(args.input)
+    output_path = Path(args.output) if args.output else input_path
+
+    try:
+        result = migrate_config_file(
+            input_path,
+            output_path if args.output else input_path,
+            backup=not args.no_backup,
+            dry_run=args.dry_run,
+            migrate_secrets=not args.no_secrets,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]Migration failed:[/red] {exc}")
+        return 1
+
+    console.print(f"[bold]Source format:[/bold] {result.source_format}")
+    for line in result.changes:
+        console.print(f"  • {line}")
+    if result.dry_run:
+        console.print("\n[dim]Dry run — no files were modified.[/dim]")
+        return 0
+    if result.backup_path:
+        console.print(f"\n[green]Backup:[/green] {result.backup_path}")
+    console.print(f"[green]Output:[/green] {result.output_path}")
+    if result.secrets_migrated:
+        console.print("[green]Secrets moved to secrets.db[/green] — config.yaml uses $secret references")
+    return 0
+
+
+def cmd_secrets_migrate(args: argparse.Namespace) -> int:
+    from rackpulse.config_io import migrate_plaintext_secrets
+
+    config_path = resolve_config_path(args.config)
+    if not config_path.exists():
+        console.print(f"[red]Config not found:[/red] {config_path}")
+        return 1
+
+    try:
+        changed = migrate_plaintext_secrets(config_path)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Migration failed:[/red] {exc}")
+        return 1
+
+    if changed:
+        console.print(
+            "[green]Secrets migrated.[/green] Passwords/tokens moved to "
+            f"[cyan]{config_path.parent / 'data' / 'secrets.db'}[/cyan] "
+            "(or secrets.path from config). config.yaml now uses $secret references."
+        )
+    else:
+        console.print("[dim]No plaintext secrets found to migrate.[/dim]")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
+    config_path = resolve_config_path(args.config)
+    if not config_path.exists():
+        console.print(f"[red]Config not found:[/red] {config_path}")
+        return 1
+
+    enable_web = getattr(args, "web", False)
+    if enable_web:
+        try:
+            from rackpulse.api.app import run_server
+        except ImportError:
+            console.print(
+                "[red]Web dependencies not installed.[/red] Run: pip install -e '.[web]'"
+            )
+            return 1
+        run_server(str(config_path), host=args.host, port=args.port, enable_web=True)
+        return 0
+
     try:
         from rackpulse.api.app import run_server
     except ImportError:
@@ -188,12 +275,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         )
         return 1
 
-    config_path = resolve_config_path(args.config)
-    if not config_path.exists():
-        console.print(f"[red]Config not found:[/red] {config_path}")
-        return 1
-
-    run_server(str(config_path), host=args.host, port=args.port)
+    run_server(str(config_path), host=args.host, port=args.port, enable_web=False)
     return 0
 
 
@@ -243,10 +325,41 @@ def build_parser() -> argparse.ArgumentParser:
     history.add_argument("--json", action="store_true", help="Output JSON")
     history.set_defaults(func=cmd_history)
 
-    serve = sub.add_parser("serve", help="Start optional HTTP API (requires [api] extras)")
+    serve = sub.add_parser("serve", help="Start HTTP API (use --web for dashboard + config UI)")
     serve.add_argument("--host", default=None, help="Bind host (default from config)")
     serve.add_argument("--port", type=int, default=None, help="Bind port (default from config)")
+    serve.add_argument(
+        "--web",
+        action="store_true",
+        help="Enable web dashboard and config UI (requires [web] extras)",
+    )
     serve.set_defaults(func=cmd_serve)
+
+    dashboard = sub.add_parser("dashboard", help="Start web dashboard + config UI (shortcut for serve --web)")
+    dashboard.add_argument("--host", default=None, help="Bind host (default from config)")
+    dashboard.add_argument("--port", type=int, default=None, help="Bind port (default from config)")
+    dashboard.set_defaults(func=cmd_serve, web=True)
+
+    secrets = sub.add_parser("secrets", help="Manage stored credentials")
+    secrets_sub = secrets.add_subparsers(dest="secrets_command", required=True)
+    migrate = secrets_sub.add_parser("migrate", help="Move plaintext passwords from config.yaml to secrets.db")
+    migrate.set_defaults(func=cmd_secrets_migrate)
+
+    migrate_cfg = sub.add_parser(
+        "migrate-config",
+        help="Convert PDU-Power-Monitor or RackPulse v1 config.yaml to v2",
+    )
+    migrate_cfg.add_argument(
+        "input",
+        nargs="?",
+        default="config.yaml",
+        help="Input config file (default: config.yaml)",
+    )
+    migrate_cfg.add_argument("-o", "--output", help="Output path (default: overwrite input)")
+    migrate_cfg.add_argument("--no-backup", action="store_true", help="Skip .bak backup when overwriting")
+    migrate_cfg.add_argument("--dry-run", action="store_true", help="Preview changes without writing")
+    migrate_cfg.add_argument("--no-secrets", action="store_true", help="Skip moving passwords to secrets.db")
+    migrate_cfg.set_defaults(func=cmd_migrate_config)
 
     return parser
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
@@ -8,7 +9,9 @@ from fastapi.responses import JSONResponse
 
 from rackpulse import __version__
 from rackpulse.api.auth import make_auth_dependency
+from rackpulse.api.routes_config import create_config_router, create_test_router
 from rackpulse.engine.poller import Poller
+from rackpulse.presentation.dashboard import build_dashboard_state
 
 _poller: Poller | None = None
 
@@ -19,7 +22,7 @@ def get_poller() -> Poller:
     return _poller
 
 
-def create_app(config_path: str) -> FastAPI:
+def create_app(config_path: str, *, enable_web: bool = False) -> FastAPI:
     from rackpulse.config import load_config
 
     global _poller
@@ -39,14 +42,25 @@ def create_app(config_path: str) -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> JSONResponse:
-        return JSONResponse({"ok": True, "version": __version__})
+        return JSONResponse(
+            {
+                "ok": True,
+                "version": __version__,
+                "auth_required": config.auth.enabled,
+            }
+        )
 
     @app.get("/api/status")
     async def status(
+        view: str = "default",
         _key: Annotated[str | None, Depends(require_auth)] = None,
     ) -> JSONResponse:
         poller = get_poller()
         snapshot = poller.get_snapshot()
+        if view == "dashboard" or enable_web:
+            return JSONResponse(
+                build_dashboard_state(snapshot, poller.config, poller.storage)
+            )
         return JSONResponse(
             {
                 "last_poll": snapshot.last_poll.isoformat() if snapshot.last_poll else None,
@@ -73,10 +87,15 @@ def create_app(config_path: str) -> FastAPI:
 
     @app.post("/api/refresh")
     async def refresh(
+        view: str = "default",
         _key: Annotated[str | None, Depends(require_auth)] = None,
     ) -> JSONResponse:
         poller = get_poller()
         snapshot = await poller.poll_once()
+        if view == "dashboard" or enable_web:
+            return JSONResponse(
+                build_dashboard_state(snapshot, poller.config, poller.storage)
+            )
         return JSONResponse(
             {
                 "last_poll": snapshot.last_poll.isoformat() if snapshot.last_poll else None,
@@ -135,20 +154,53 @@ def create_app(config_path: str) -> FastAPI:
             }
         )
 
+    if enable_web:
+        from fastapi.staticfiles import StaticFiles
+        from rackpulse.web.routes import WEB_DIR, create_web_router
+
+        static_dir = WEB_DIR / "static"
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        app.include_router(create_web_router(__version__))
+        app.include_router(create_config_router(config_path, get_poller, require_auth))
+        app.include_router(create_test_router(get_poller, require_auth))
+
+        @app.get("/api/meta/device-types")
+        async def device_types(
+            _key: Annotated[str | None, Depends(require_auth)] = None,
+        ) -> JSONResponse:
+            from rackpulse.collectors.registry import SUPPORTED_TYPES
+
+            return JSONResponse({"types": SUPPORTED_TYPES})
+
     return app
 
 
-def run_server(config_path: str, host: str | None = None, port: int | None = None) -> None:
+def run_server(
+    config_path: str,
+    host: str | None = None,
+    port: int | None = None,
+    *,
+    enable_web: bool = False,
+) -> None:
     from rackpulse.config import load_config
     import uvicorn
 
     config = load_config(config_path)
     bind_host = host or config.server.host
     bind_port = port or config.server.port
-    app = create_app(config_path)
+    app = create_app(config_path, enable_web=enable_web)
 
-    print(f"RackPulse API on http://{bind_host}:{bind_port}")
+    mode = "dashboard + API" if enable_web else "API"
+    print(f"RackPulse {mode} on http://{bind_host}:{bind_port}")
     print(f"Config: {config_path}")
+    if enable_web:
+        print(f"Dashboard: http://{bind_host}:{bind_port}/")
+        print(f"Configuration: http://{bind_host}:{bind_port}/config")
+        if not config.auth.enabled:
+            print(
+                "WARNING: Auth is disabled. Enable auth.enabled in config before "
+                "exposing the dashboard on your network."
+            )
     if config.auth.enabled:
         print("Auth: enabled (X-API-Key header required)")
     else:
