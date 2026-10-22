@@ -150,6 +150,8 @@ def config_to_dict(config: AppConfig, *, mask_secrets: bool = True) -> dict[str,
         },
         "alerts": {
             "cooldown_minutes": config.alerts.cooldown_minutes,
+            "hold_enabled": config.alerts.hold_enabled,
+            "hold_minutes": config.alerts.hold_minutes,
             "smtp": {
                 "host": config.alerts.smtp.host,
                 "port": config.alerts.smtp.port,
@@ -307,8 +309,9 @@ def merge_config_update(current: AppConfig, update: dict[str, Any]) -> dict[str,
 
     alerts_update = deep.pop("alerts", None)
     if alerts_update:
-        if "cooldown_minutes" in alerts_update:
-            merged.setdefault("alerts", {})["cooldown_minutes"] = alerts_update["cooldown_minutes"]
+        for key in ("cooldown_minutes", "hold_enabled", "hold_minutes"):
+            if key in alerts_update:
+                merged.setdefault("alerts", {})[key] = alerts_update[key]
         if "smtp" in alerts_update:
             smtp_update = alerts_update["smtp"]
             if _mask_placeholder(smtp_update.get("password")):

@@ -92,6 +92,10 @@ class WebhookConfig:
 @dataclass
 class AlertsConfig:
     cooldown_minutes: int = 15
+    # When hold is on, wattage alerts wait until the draw stays over the
+    # threshold. A brief spike does not notify.
+    hold_enabled: bool = False
+    hold_minutes: int = 5
     smtp: SmtpConfig = field(default_factory=SmtpConfig)
     webhooks: list[WebhookConfig] = field(default_factory=list)
 
@@ -201,8 +205,11 @@ def _parse_alerts(raw: dict[str, Any]) -> AlertsConfig:
     cooldown = alerts_raw.get("cooldown_minutes", raw.get("alert_cooldown_minutes", 15))
     smtp_raw = alerts_raw.get("smtp", raw.get("smtp", {})) or {}
     webhooks_raw = alerts_raw.get("webhooks", raw.get("webhooks", [])) or []
+    hold_minutes = int(alerts_raw.get("hold_minutes", 5) or 5)
     return AlertsConfig(
         cooldown_minutes=int(cooldown),
+        hold_enabled=bool(alerts_raw.get("hold_enabled", False)),
+        hold_minutes=max(1, hold_minutes),
         smtp=_parse_smtp(smtp_raw),
         webhooks=[_parse_webhook(w) for w in webhooks_raw],
     )
@@ -369,6 +376,8 @@ def _resolve_config_secrets(config: AppConfig, store: SecretsStore | None) -> Ap
         server=config.server,
         alerts=AlertsConfig(
             cooldown_minutes=config.alerts.cooldown_minutes,
+            hold_enabled=config.alerts.hold_enabled,
+            hold_minutes=config.alerts.hold_minutes,
             smtp=resolved_smtp,
             webhooks=list(config.alerts.webhooks),
         ),

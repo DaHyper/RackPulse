@@ -27,6 +27,11 @@ server:
 
 alerts:
   cooldown_minutes: 15
+  # Wattage alerts fire on the first poll over the line unless hold is on.
+  # With hold enabled, the draw must stay at or above the threshold for
+  # hold_minutes before an email or webhook is sent. Spikes are ignored.
+  hold_enabled: false
+  hold_minutes: 5
   smtp:
     host: ""
     port: 587

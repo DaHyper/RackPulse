@@ -88,6 +88,17 @@
                 <input type="number" id="alert-cooldown" min="1" max="120" step="1">
               </label>
             </div>
+            <div class="form-stack hold-settings">
+              <label class="checkbox-row">
+                <input type="checkbox" id="alert-hold-enabled">
+                Only alert if the reading holds
+              </label>
+              <label id="alert-hold-minutes-wrap">
+                Hold time (minutes)
+                <input type="number" id="alert-hold-minutes" min="1" max="120" step="1" value="5">
+                <span class="hint">A spike that drops back under the threshold before this time does not send an alert. The same wait applies before a recovery alert.</span>
+              </label>
+            </div>
             <div class="form-row">
               <label>
                 PDU power OID

@@ -134,6 +134,88 @@ def test_stale_pdu_does_not_send_wattage_alert():
     assert any("DEVICE RECOVERED" in s for s in subjects)
 
 
+def test_hold_ignores_a_brief_spike():
+    tracker = AlertTracker(cooldown_minutes=0, hold_minutes=5)
+    notifier = MagicMock()
+    rack_cfg = RackConfig(name="rack-1", warning_kw=2.0, critical_kw=3.0, devices=[])
+    warning = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 2500)])
+    ok = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 1000)])
+
+    tracker.process([warning], notifier, now=0)
+    tracker.process([ok], notifier, now=30)
+    assert notifier.send.call_count == 0
+
+    # Crossing again starts a new hold; one late sample is not enough.
+    tracker.process([warning], notifier, now=1000)
+    assert notifier.send.call_count == 0
+    tracker.process([warning], notifier, now=1000 + 5 * 60)
+    assert notifier.send.call_count == 1
+    assert "WARNING:" in notifier.send.call_args.kwargs["subject"]
+    assert "held for at least 5 minutes" in notifier.send.call_args.kwargs["body"]
+
+
+def test_hold_delays_recovery_until_the_clear_sticks():
+    tracker = AlertTracker(cooldown_minutes=0, hold_minutes=5)
+    notifier = MagicMock()
+    rack_cfg = RackConfig(name="rack-1", warning_kw=2.0, critical_kw=3.0, devices=[])
+    warning = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 2500)])
+    ok = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 1000)])
+
+    tracker.process([warning], notifier, now=0)
+    tracker.process([warning], notifier, now=300)
+    assert notifier.send.call_count == 1
+
+    tracker.process([ok], notifier, now=310)
+    tracker.process([warning], notifier, now=320)
+    assert notifier.send.call_count == 1
+
+    tracker.process([ok], notifier, now=400)
+    tracker.process([ok], notifier, now=400 + 300)
+    subjects = [call.kwargs["subject"] for call in notifier.send.call_args_list]
+    assert any("RECOVERED" in subject for subject in subjects)
+
+
+def test_critical_spike_does_not_alert_until_it_holds():
+    tracker = AlertTracker(cooldown_minutes=0, hold_minutes=5)
+    notifier = MagicMock()
+    rack_cfg = RackConfig(name="rack-1", warning_kw=2.0, critical_kw=3.0, devices=[])
+    warning = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 2500)])
+    critical = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 3500)])
+
+    tracker.process([warning], notifier, now=0)
+    tracker.process([warning], notifier, now=300)
+    tracker.process([critical], notifier, now=310)
+    tracker.process([warning], notifier, now=320)
+
+    subjects = [call.kwargs["subject"] for call in notifier.send.call_args_list]
+    assert any("WARNING:" in subject for subject in subjects)
+    assert not any("CRITICAL:" in subject for subject in subjects)
+
+
+def test_stale_sample_does_not_finish_a_hold():
+    tracker = AlertTracker(cooldown_minutes=0, hold_minutes=5)
+    notifier = MagicMock()
+    rack_cfg = RackConfig(name="rack-1", warning_kw=2.0, critical_kw=3.0, devices=[])
+    warning = aggregate_rack_reading(rack_cfg, [_device("pdu-1", 2500)])
+    stale = aggregate_rack_reading(
+        rack_cfg, [_device("pdu-1", 2500, DeviceStatus.STALE)]
+    )
+
+    tracker.process([warning], notifier, now=0)
+    tracker.process([stale], notifier, now=600)
+    subjects = [call.kwargs["subject"] for call in notifier.send.call_args_list]
+    assert not any("WARNING:" in subject for subject in subjects)
+
+    tracker.process([warning], notifier, now=610)
+    assert not any(
+        "WARNING:" in call.kwargs["subject"] for call in notifier.send.call_args_list
+    )
+    tracker.process([warning], notifier, now=610 + 300)
+    assert any(
+        "WARNING:" in call.kwargs["subject"] for call in notifier.send.call_args_list
+    )
+
+
 def test_real_wattage_warning_still_alerts():
     tracker = AlertTracker(cooldown_minutes=0)
     notifier = MagicMock()

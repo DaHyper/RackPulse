@@ -856,6 +856,18 @@ input:focus, select:focus {
   width: auto;
 }
 
+.hold-settings {
+  margin-top: 0.875rem;
+}
+
+#alert-hold-minutes-wrap .hint {
+  margin-top: 0.25rem;
+}
+
+#alert-hold-minutes-wrap.is-disabled {
+  opacity: 0.45;
+}
+
 .import-btn {
   cursor: pointer;
   display: inline-flex;

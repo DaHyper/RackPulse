@@ -76,7 +76,19 @@ class Poller:
         )
 
     def _init_alerts(self) -> None:
-        self._alert_tracker = AlertTracker(self._config.alerts.cooldown_minutes)
+        alerts = self._config.alerts
+        hold_minutes = alerts.hold_minutes if alerts.hold_enabled else 0
+        self._alert_tracker = AlertTracker(alerts.cooldown_minutes, hold_minutes)
+
+    def _sync_alert_timing(self) -> None:
+        if self._alert_tracker is None:
+            self._init_alerts()
+            return
+        alerts = self._config.alerts
+        self._alert_tracker.cooldown_seconds = alerts.cooldown_minutes * 60
+        self._alert_tracker.hold_seconds = (
+            alerts.hold_minutes * 60 if alerts.hold_enabled else 0
+        )
 
     @staticmethod
     def _has_alert_config(config: AppConfig) -> bool:
@@ -99,10 +111,7 @@ class Poller:
             self._config = load_config(self.config_path)
             self._sync_poll_limits(self._config)
             self._snapshot.poll_interval_seconds = self._config.poll_interval_seconds
-            if self._alert_tracker is not None:
-                self._alert_tracker.cooldown_seconds = self._config.alerts.cooldown_minutes * 60
-            else:
-                self._init_alerts()
+            self._sync_alert_timing()
 
     def get_snapshot(self) -> PollSnapshot:
         with self._lock:

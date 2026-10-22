@@ -404,6 +404,9 @@ function render() {
   const alerts = alertsConfig();
   document.getElementById("poll-interval").value = config.poll_interval_seconds;
   document.getElementById("alert-cooldown").value = alerts.cooldown_minutes ?? 15;
+  document.getElementById("alert-hold-enabled").checked = Boolean(alerts.hold_enabled);
+  document.getElementById("alert-hold-minutes").value = alerts.hold_minutes ?? 5;
+  syncHoldField();
   document.getElementById("power-oid").value = pdu.power_oid || "";
   document.getElementById("power-divisor").value = pdu.power_divisor ?? 100;
   document.getElementById("energy-oid").value = pdu.energy_oid || "";
@@ -517,6 +520,9 @@ function readFormIntoConfig() {
   const alerts = alertsConfig();
   config.poll_interval_seconds = parseInt(document.getElementById("poll-interval").value, 10);
   alerts.cooldown_minutes = parseInt(document.getElementById("alert-cooldown").value, 10);
+  alerts.hold_enabled = document.getElementById("alert-hold-enabled").checked;
+  const holdMinutes = parseInt(document.getElementById("alert-hold-minutes").value, 10);
+  alerts.hold_minutes = Number.isFinite(holdMinutes) && holdMinutes > 0 ? holdMinutes : 5;
 
   if (!config.pdu) config.pdu = {};
   config.pdu.power_oid = document.getElementById("power-oid").value;
@@ -532,6 +538,13 @@ function readFormIntoConfig() {
   if (pw) alerts.smtp.password = pw;
   alerts.smtp.from_address = document.getElementById("smtp-from").value;
   alerts.smtp.recipients = [...recipients];
+}
+
+function syncHoldField() {
+  const enabled = document.getElementById("alert-hold-enabled").checked;
+  const wrap = document.getElementById("alert-hold-minutes-wrap");
+  wrap.classList.toggle("is-disabled", !enabled);
+  document.getElementById("alert-hold-minutes").disabled = !enabled;
 }
 
 function showStatus(msg, ok) {
@@ -677,6 +690,7 @@ document.getElementById("test-webhooks-btn").addEventListener("click", async () 
   showStatus(res.ok ? "Test webhook sent." : data.detail || "Webhook test failed.", res.ok);
 });
 
+document.getElementById("alert-hold-enabled").addEventListener("change", syncHoldField);
 document.getElementById("snmp-version").addEventListener("change", toggleSnmpV3Panel);
 
 document.getElementById("export-config-btn").addEventListener("click", () => {

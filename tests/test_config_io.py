@@ -77,6 +77,31 @@ def test_config_save_round_trip_stores_secrets(tmp_path: Path):
     assert reloaded.racks[0].devices[0].password == "super-secret"
 
 
+def test_hold_settings_round_trip(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    secrets_path = tmp_path / "secrets.db"
+    save_config(
+        config_path,
+        {
+            "storage": {"path": str(tmp_path / "rackpulse.db")},
+            "secrets": {"path": str(secrets_path)},
+            "alerts": {"hold_enabled": True, "hold_minutes": 8, "cooldown_minutes": 10},
+            "racks": [],
+        },
+    )
+    loaded = load_config(config_path)
+    assert loaded.alerts.hold_enabled is True
+    assert loaded.alerts.hold_minutes == 8
+
+    merged = merge_config_update(
+        loaded,
+        {"alerts": {"hold_enabled": False, "hold_minutes": 3}},
+    )
+    assert merged["alerts"]["hold_enabled"] is False
+    assert merged["alerts"]["hold_minutes"] == 3
+    assert merged["alerts"]["cooldown_minutes"] == 10
+
+
 def test_config_export_masks_secrets(tmp_path: Path):
     config_path = tmp_path / "config.yaml"
     secrets_path = tmp_path / "secrets.db"
